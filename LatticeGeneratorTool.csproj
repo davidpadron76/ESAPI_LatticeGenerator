@@ -3,7 +3,7 @@
   <PropertyGroup>
     <Configuration Condition=" '$(Configuration)' == '' ">Debug</Configuration>
     <Platform Condition=" '$(Platform)' == '' ">x64</Platform>
-    <ProjectGuid>1044ad45-6d17-4094-b139-c34e66251819</ProjectGuid>
+    <ProjectGuid>{1044AD45-6D17-4094-B139-C34E66251819}</ProjectGuid>
     <OutputType>library</OutputType>
     <AppDesignerFolder>Properties</AppDesignerFolder>
     <RootNamespace>LatticeGeneratorTool</RootNamespace>
