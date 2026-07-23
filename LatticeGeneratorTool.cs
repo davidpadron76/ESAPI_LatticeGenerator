@@ -74,6 +74,15 @@ namespace VMS.TPS
             TextBox txtSeparation = new TextBox { Text = "3.0", Margin = new Thickness(5) };
             pnlParams.Children.Add(txtSeparation);
 
+            pnlParams.Children.Add(new TextBlock { Text = "Grid Tilt vs. Axial (°):", VerticalAlignment = VerticalAlignment.Center });
+            TextBox txtTiltDeg = new TextBox
+            {
+                Text = "15.0",
+                Margin = new Thickness(5),
+                ToolTip = "Inclina la malla de vértices respecto al plano axial (eje Izquierda-Derecha) para que no queden todos en el mismo corte. Prueba valores entre 10 y 30°."
+            };
+            pnlParams.Children.Add(txtTiltDeg);
+
             pnlParams.Children.Add(new TextBlock { Text = "Peak Dose (Gy):", VerticalAlignment = VerticalAlignment.Center });
             TextBox txtPeakDose = new TextBox { Text = "20.0", Margin = new Thickness(5) };
             pnlParams.Children.Add(txtPeakDose);
@@ -86,7 +95,37 @@ namespace VMS.TPS
             TextBox txtGradient = new TextBox { Text = "10.0", Margin = new Thickness(5) };
             pnlParams.Children.Add(txtGradient);
 
+            pnlParams.Children.Add(new TextBlock { Text = "Boost: Distancia al borde GTV (cm):", VerticalAlignment = VerticalAlignment.Center });
+            TextBox txtManualDist = new TextBox { Text = "0.2", Margin = new Thickness(5), IsEnabled = false };
+            pnlParams.Children.Add(txtManualDist);
+
             mainPanel.Children.Add(pnlParams);
+
+            // -- NUEVA SECCIÓN: Modo Boost Manual (SRS/SBRT) --
+            // Reemplaza el cálculo de margen por gradiente de dosis por una distancia fija
+            // definida manualmente. Pensado para lesiones pequeñas (SRS/SBRT) donde el
+            // método dosimétrico automático no deja espacio útil para generar vértices.
+            CheckBox cbManualBoost = new CheckBox
+            {
+                Content = "Modo Boost Manual (SRS/SBRT): usar distancia fija al borde en vez de gradiente de dosis",
+                Margin = new Thickness(0, 5, 0, 10),
+                ToolTip = "Ideal para lesiones pequeñas donde el cálculo dosimétrico automático no deja espacio para vértices. Define directamente qué tan lejos del borde del GTV se ubica la superficie de la esfera."
+            };
+            cbManualBoost.Checked += (sender, e) =>
+            {
+                txtManualDist.IsEnabled = true;
+                txtPeakDose.IsEnabled = false;
+                txtPeriDose.IsEnabled = false;
+                txtGradient.IsEnabled = false;
+            };
+            cbManualBoost.Unchecked += (sender, e) =>
+            {
+                txtManualDist.IsEnabled = false;
+                txtPeakDose.IsEnabled = true;
+                txtPeriDose.IsEnabled = true;
+                txtGradient.IsEnabled = true;
+            };
+            mainPanel.Children.Add(cbManualBoost);
 
             // -- Sección C: OARs a evitar --
             mainPanel.Children.Add(new TextBlock { Text = "3. Avoidance Structures (OARs):", FontWeight = FontWeights.Bold, Margin = new Thickness(0, 15, 0, 5) });
@@ -131,16 +170,19 @@ namespace VMS.TPS
 
                 double diameter = double.Parse(txtDiameter.Text, CultureInfo.InvariantCulture);
                 double separation = double.Parse(txtSeparation.Text, CultureInfo.InvariantCulture);
+                double tiltDeg = double.Parse(txtTiltDeg.Text, CultureInfo.InvariantCulture);
                 double peakDose = double.Parse(txtPeakDose.Text, CultureInfo.InvariantCulture);
                 double periDose = double.Parse(txtPeriDose.Text, CultureInfo.InvariantCulture);
                 double gradient = double.Parse(txtGradient.Text, CultureInfo.InvariantCulture);
                 double oarMargin = double.Parse(txtOARMargin.Text, CultureInfo.InvariantCulture);
                 bool makeIndividual = cbIndividual.IsChecked == true;
+                bool manualBoost = cbManualBoost.IsChecked == true;
+                double manualDistCm = manualBoost ? double.Parse(txtManualDist.Text, CultureInfo.InvariantCulture) : 0.0;
 
                 mainWindow.DialogResult = true;
                 mainWindow.Close();
 
-                GenerateLatticeGeometry(context, selectedGTV, selectedOARs, diameter, separation, peakDose, periDose, gradient, oarMargin, makeIndividual);
+                GenerateLatticeGeometry(context, selectedGTV, selectedOARs, diameter, separation, tiltDeg, peakDose, periDose, gradient, oarMargin, makeIndividual, manualBoost, manualDistCm);
             };
 
             mainPanel.Children.Add(btnGenerate);
@@ -151,7 +193,7 @@ namespace VMS.TPS
         // =========================================================================
         // FASE 2: MOTOR GEOMÉTRICO LATTICE Y BOOLEANOS
         // =========================================================================
-        private void GenerateLatticeGeometry(ScriptContext context, Structure gtv, List<Structure> oars, double diameterCm, double separationCm, double peakDose, double periDose, double gradient, double oarMarginCm, bool makeIndividual)
+        private void GenerateLatticeGeometry(ScriptContext context, Structure gtv, List<Structure> oars, double diameterCm, double separationCm, double tiltDeg, double peakDose, double periDose, double gradient, double oarMarginCm, bool makeIndividual, bool manualBoost, double manualDistCm)
         {
             try
             {
@@ -162,11 +204,22 @@ namespace VMS.TPS
                 double separationMm = separationCm * 10.0;
                 double oarMarginMm = oarMarginCm * 10.0;
 
-                double doseDrop = peakDose - periDose;
-                double dropRatePerMm = peakDose * (gradient / 100.0);
-                double gradientMarginMm = doseDrop / dropRatePerMm;
-
-                double totalContractionMarginMm = gradientMarginMm + radiusMm;
+                // El margen de contracción define a qué distancia del borde del GTV
+                // queda el CENTRO de las esferas. En modo Boost Manual se toma directo
+                // de la distancia indicada por el usuario; si no, se deriva del gradiente
+                // de dosis (distancia necesaria para caer de la dosis pico a la periférica).
+                double totalContractionMarginMm;
+                if (manualBoost)
+                {
+                    totalContractionMarginMm = (manualDistCm * 10.0) + radiusMm;
+                }
+                else
+                {
+                    double doseDrop = peakDose - periDose;
+                    double dropRatePerMm = peakDose * (gradient / 100.0);
+                    double gradientMarginMm = doseDrop / dropRatePerMm;
+                    totalContractionMarginMm = gradientMarginMm + radiusMm;
+                }
 
                 // Limpieza previa (Borra tanto el global como los individuales previos)
                 RemoveStructureIfExists(ss, "LRT_Volume");
@@ -207,20 +260,37 @@ namespace VMS.TPS
 
                 List<VVector> gridPoints = new List<VVector>();
 
-                double xMin = com.x - Math.Ceiling((com.x - bounds.X) / separationMm) * separationMm;
-                double xMax = bounds.X + bounds.SizeX;
-                double yMin = com.y - Math.Ceiling((com.y - bounds.Y) / separationMm) * separationMm;
-                double yMax = bounds.Y + bounds.SizeY;
-                double zMin = com.z - Math.Ceiling((com.z - bounds.Z) / separationMm) * separationMm;
-                double zMax = bounds.Z + bounds.SizeZ;
+                // La malla se genera en un sistema local (xLocal, yLocal, zLocal) centrado en
+                // el centroide y luego se rota "tiltDeg" grados alrededor del eje X (Izquierda-
+                // Derecha) antes de trasladarla al espacio del paciente. Con tiltDeg = 0 el
+                // comportamiento es el mismo grid cúbico alineado a los ejes de siempre. Con
+                // tiltDeg > 0, el paso a lo largo de Z-local también desplaza Y en el paciente,
+                // evitando que todos los vértices caigan en el mismo corte axial cuando el
+                // volumen disponible es delgado en Z (lesiones pequeñas o aplanadas).
+                double tiltRad = tiltDeg * Math.PI / 180.0;
+                double cosT = Math.Cos(tiltRad);
+                double sinT = Math.Sin(tiltRad);
 
-                for (double x = xMin; x <= xMax; x += separationMm)
+                double halfDiagonalMm = Math.Sqrt(
+                    Math.Pow(bounds.SizeX / 2.0, 2) +
+                    Math.Pow(bounds.SizeY / 2.0, 2) +
+                    Math.Pow(bounds.SizeZ / 2.0, 2));
+                int n = (int)Math.Ceiling(halfDiagonalMm / separationMm) + 1;
+
+                for (int i = -n; i <= n; i++)
                 {
-                    for (double y = yMin; y <= yMax; y += separationMm)
+                    double xLocal = i * separationMm;
+                    for (int j = -n; j <= n; j++)
                     {
-                        for (double z = zMin; z <= zMax; z += separationMm)
+                        double yLocal = j * separationMm;
+                        for (int k = -n; k <= n; k++)
                         {
-                            VVector pt = new VVector(x, y, z);
+                            double zLocal = k * separationMm;
+
+                            double yRot = yLocal * cosT - zLocal * sinT;
+                            double zRot = yLocal * sinT + zLocal * cosT;
+
+                            VVector pt = new VVector(com.x + xLocal, com.y + yRot, com.z + zRot);
                             if (vL.IsPointInsideSegment(pt))
                             {
                                 gridPoints.Add(pt);
@@ -274,8 +344,14 @@ namespace VMS.TPS
 
                 double finalRatio = (finalSphereCount * sphereVolCc / gtvVolCc) * 100.0;
 
+                string marginModeMsg = manualBoost
+                    ? $"Boost Manual (distancia al borde: {manualDistCm:F2} cm)"
+                    : $"Gradiente de Dosis ({gradient:F1} %/mm)";
+
                 string msg = $"Geometría LATTICE generada con éxito.\n\n" +
+                             $"- Modo de margen: {marginModeMsg}\n" +
                              $"- Margen interno de seguridad aplicado: {totalContractionMarginMm:F1} mm\n" +
+                             $"- Inclinación de malla vs. axial: {tiltDeg:F1}°\n" +
                              $"- Vértices creados: {finalSphereCount}\n" +
                              $"- Volume Ratio final: {finalRatio:F2}%\n" +
                              $"- Modo: {(makeIndividual ? "Estructuras Individuales" : "Estructura Única")}\n";
