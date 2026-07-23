@@ -86,7 +86,37 @@ namespace VMS.TPS
             TextBox txtGradient = new TextBox { Text = "10.0", Margin = new Thickness(5) };
             pnlParams.Children.Add(txtGradient);
 
+            pnlParams.Children.Add(new TextBlock { Text = "Boost: Distancia al borde GTV (cm):", VerticalAlignment = VerticalAlignment.Center });
+            TextBox txtManualDist = new TextBox { Text = "0.2", Margin = new Thickness(5), IsEnabled = false };
+            pnlParams.Children.Add(txtManualDist);
+
             mainPanel.Children.Add(pnlParams);
+
+            // -- NUEVA SECCIÓN: Modo Boost Manual (SRS/SBRT) --
+            // Reemplaza el cálculo de margen por gradiente de dosis por una distancia fija
+            // definida manualmente. Pensado para lesiones pequeñas (SRS/SBRT) donde el
+            // método dosimétrico automático no deja espacio útil para generar vértices.
+            CheckBox cbManualBoost = new CheckBox
+            {
+                Content = "Modo Boost Manual (SRS/SBRT): usar distancia fija al borde en vez de gradiente de dosis",
+                Margin = new Thickness(0, 5, 0, 10),
+                ToolTip = "Ideal para lesiones pequeñas donde el cálculo dosimétrico automático no deja espacio para vértices. Define directamente qué tan lejos del borde del GTV se ubica la superficie de la esfera."
+            };
+            cbManualBoost.Checked += (sender, e) =>
+            {
+                txtManualDist.IsEnabled = true;
+                txtPeakDose.IsEnabled = false;
+                txtPeriDose.IsEnabled = false;
+                txtGradient.IsEnabled = false;
+            };
+            cbManualBoost.Unchecked += (sender, e) =>
+            {
+                txtManualDist.IsEnabled = false;
+                txtPeakDose.IsEnabled = true;
+                txtPeriDose.IsEnabled = true;
+                txtGradient.IsEnabled = true;
+            };
+            mainPanel.Children.Add(cbManualBoost);
 
             // -- Sección C: OARs a evitar --
             mainPanel.Children.Add(new TextBlock { Text = "3. Avoidance Structures (OARs):", FontWeight = FontWeights.Bold, Margin = new Thickness(0, 15, 0, 5) });
@@ -136,11 +166,13 @@ namespace VMS.TPS
                 double gradient = double.Parse(txtGradient.Text, CultureInfo.InvariantCulture);
                 double oarMargin = double.Parse(txtOARMargin.Text, CultureInfo.InvariantCulture);
                 bool makeIndividual = cbIndividual.IsChecked == true;
+                bool manualBoost = cbManualBoost.IsChecked == true;
+                double manualDistCm = manualBoost ? double.Parse(txtManualDist.Text, CultureInfo.InvariantCulture) : 0.0;
 
                 mainWindow.DialogResult = true;
                 mainWindow.Close();
 
-                GenerateLatticeGeometry(context, selectedGTV, selectedOARs, diameter, separation, peakDose, periDose, gradient, oarMargin, makeIndividual);
+                GenerateLatticeGeometry(context, selectedGTV, selectedOARs, diameter, separation, peakDose, periDose, gradient, oarMargin, makeIndividual, manualBoost, manualDistCm);
             };
 
             mainPanel.Children.Add(btnGenerate);
@@ -151,7 +183,7 @@ namespace VMS.TPS
         // =========================================================================
         // FASE 2: MOTOR GEOMÉTRICO LATTICE Y BOOLEANOS
         // =========================================================================
-        private void GenerateLatticeGeometry(ScriptContext context, Structure gtv, List<Structure> oars, double diameterCm, double separationCm, double peakDose, double periDose, double gradient, double oarMarginCm, bool makeIndividual)
+        private void GenerateLatticeGeometry(ScriptContext context, Structure gtv, List<Structure> oars, double diameterCm, double separationCm, double peakDose, double periDose, double gradient, double oarMarginCm, bool makeIndividual, bool manualBoost, double manualDistCm)
         {
             try
             {
@@ -162,11 +194,22 @@ namespace VMS.TPS
                 double separationMm = separationCm * 10.0;
                 double oarMarginMm = oarMarginCm * 10.0;
 
-                double doseDrop = peakDose - periDose;
-                double dropRatePerMm = peakDose * (gradient / 100.0);
-                double gradientMarginMm = doseDrop / dropRatePerMm;
-
-                double totalContractionMarginMm = gradientMarginMm + radiusMm;
+                // El margen de contracción define a qué distancia del borde del GTV
+                // queda el CENTRO de las esferas. En modo Boost Manual se toma directo
+                // de la distancia indicada por el usuario; si no, se deriva del gradiente
+                // de dosis (distancia necesaria para caer de la dosis pico a la periférica).
+                double totalContractionMarginMm;
+                if (manualBoost)
+                {
+                    totalContractionMarginMm = (manualDistCm * 10.0) + radiusMm;
+                }
+                else
+                {
+                    double doseDrop = peakDose - periDose;
+                    double dropRatePerMm = peakDose * (gradient / 100.0);
+                    double gradientMarginMm = doseDrop / dropRatePerMm;
+                    totalContractionMarginMm = gradientMarginMm + radiusMm;
+                }
 
                 // Limpieza previa (Borra tanto el global como los individuales previos)
                 RemoveStructureIfExists(ss, "LRT_Volume");
@@ -274,7 +317,12 @@ namespace VMS.TPS
 
                 double finalRatio = (finalSphereCount * sphereVolCc / gtvVolCc) * 100.0;
 
+                string marginModeMsg = manualBoost
+                    ? $"Boost Manual (distancia al borde: {manualDistCm:F2} cm)"
+                    : $"Gradiente de Dosis ({gradient:F1} %/mm)";
+
                 string msg = $"Geometría LATTICE generada con éxito.\n\n" +
+                             $"- Modo de margen: {marginModeMsg}\n" +
                              $"- Margen interno de seguridad aplicado: {totalContractionMarginMm:F1} mm\n" +
                              $"- Vértices creados: {finalSphereCount}\n" +
                              $"- Volume Ratio final: {finalRatio:F2}%\n" +
