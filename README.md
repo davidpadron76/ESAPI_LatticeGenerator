@@ -10,6 +10,9 @@ By leveraging ESAPI Boolean operations, this script eliminates manual contouring
 * **Dynamic Skin & OAR Sparing:** Automatically subtracts user-defined OARs and external body margins to prevent vertices from overlapping with critical structures.
 * **Parametric UI (WPF):** Intuitive user interface to define sphere radius, center-to-center spacing, and required dose-falloff margins.
 * **Volume Ratio Control:** Calculates and limits the total LATTICE volume to a maximum of 10% of the target volume, trimming excess spheres automatically.
+* **Individual or Grouped Output:** Generate a single combined `LRT_Vertices` structure, or check "Generate individual structures" to create separate `zV_01`, `zV_02`, ... structures per sphere for manual repositioning.
+* **Manual Boost Mode (SRS/SBRT):** Optionally bypass the dose-gradient margin calculation and set a fixed distance from the GTV border instead — useful for small lesions where the automatic dosimetric method leaves no room for vertices.
+* **Tilted Vertex Grid:** Adjustable grid tilt (°) relative to the axial plane keeps vertices from clustering on a single CT slice in thin or flattened lesions; the angle can be tuned per case (try 10–30°).
 
 ## 💻 System Requirements
 * **Eclipse TPS:** Version 15.5 or higher.
@@ -30,8 +33,10 @@ Because this project relies on external libraries and custom UI frameworks, **it
 1. Open a Patient and a Structure Set in Eclipse.
 2. Ensure you have a target structure contoured (e.g., `GTV`).
 3. Run the compiled LATTICE Generator `.dll`.
-4. In the UI window, select your Target Structure, OARs to avoid, and define your geometric parameters (Radius, Spacing).
-5. Click **Generate** and review the created structures in the TPS.
+4. In the UI window, select your Target Structure, OARs to avoid, and define your geometric parameters (Diameter, Separation, Grid Tilt).
+5. Choose your dose-margin mode: use the dose-falloff fields (Peak Dose, Peripheral Dose, Gradient) for standard LATTICE, or check **Manual Boost Mode (SRS/SBRT)** to set a fixed distance from the GTV border instead.
+6. Check **Generate individual structures** if you need each sphere as its own structure (`zV_01`, `zV_02`, ...) for manual adjustment; leave it unchecked to get a single `LRT_Vertices` structure.
+7. Click **Generate** and review the created structures in the TPS.
 
 ## 📄 License
 This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
