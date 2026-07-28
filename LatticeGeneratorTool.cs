@@ -9,6 +9,7 @@ using System.Windows.Controls;
 using System.Globalization;
 using VMS.TPS.Common.Model.API;
 using VMS.TPS.Common.Model.Types;
+using VMS.TPS.LatticeMath;
 
 [assembly: AssemblyVersion("1.0.0.1")]
 [assembly: AssemblyFileVersion("1.0.0.1")]
@@ -19,6 +20,12 @@ namespace VMS.TPS
 {
     public class Script
     {
+        private const int EclipseStructureLimit = 99;
+        private const int StructureLimitSafetyBuffer = 2;
+        private const int HaltonSampleCount = 513;
+        private const double RatioBandMinPercent = 2.0;
+        private const double RatioBandMaxPercent = 4.0;
+
         public Script()
         {
         }
@@ -48,8 +55,8 @@ namespace VMS.TPS
             Window mainWindow = new Window
             {
                 Title = "LATTICE Generator Tool (LRT)",
-                Width = 400,
-                Height = 650,
+                Width = 420,
+                Height = 700,
                 WindowStartupLocation = WindowStartupLocation.CenterScreen,
                 ResizeMode = ResizeMode.NoResize
             };
@@ -99,6 +106,15 @@ namespace VMS.TPS
             TextBox txtManualDist = new TextBox { Text = "0.2", Margin = new Thickness(5), IsEnabled = false };
             pnlParams.Children.Add(txtManualDist);
 
+            pnlParams.Children.Add(new TextBlock { Text = "Cold Envelope Expansion (cm):", VerticalAlignment = VerticalAlignment.Center });
+            TextBox txtColdEnvelope = new TextBox
+            {
+                Text = "0.5",
+                Margin = new Thickness(5),
+                ToolTip = "Distancia hacia afuera del borde del GTV hasta donde pueden extenderse las esferas 'cold' (valles de baja dosis)."
+            };
+            pnlParams.Children.Add(txtColdEnvelope);
+
             mainPanel.Children.Add(pnlParams);
 
             // -- NUEVA SECCIÓN: Modo Boost Manual (SRS/SBRT) --
@@ -109,7 +125,7 @@ namespace VMS.TPS
             {
                 Content = "Modo Boost Manual (SRS/SBRT): usar distancia fija al borde en vez de gradiente de dosis",
                 Margin = new Thickness(0, 5, 0, 10),
-                ToolTip = "Ideal para lesiones pequeñas donde el cálculo dosimétrico automático no deja espacio para vértices. Define directamente qué tan lejos del borde del GTV se ubica la superficie de la esfera."
+                ToolTip = "Ideal para lesiones pequeñas donde el cálculo dosimétrico automático no deja espacio para vértices. Define directamente qué tan lejos del borde del GTV se ubica la superficie de la esfera hot."
             };
             cbManualBoost.Checked += (sender, e) =>
             {
@@ -140,17 +156,17 @@ namespace VMS.TPS
             mainPanel.Children.Add(lstOARs);
 
             StackPanel pnlOARMargin = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 0, 0, 10) };
-            pnlOARMargin.Children.Add(new TextBlock { Text = "OAR Safety Margin (cm): ", VerticalAlignment = VerticalAlignment.Center });
+            pnlOARMargin.Children.Add(new TextBlock { Text = "OAR Safety Margin (cm) — Hot region only: ", VerticalAlignment = VerticalAlignment.Center });
             TextBox txtOARMargin = new TextBox { Text = "0.5", Width = 50 };
             pnlOARMargin.Children.Add(txtOARMargin);
             mainPanel.Children.Add(pnlOARMargin);
 
             // -- NUEVA SECCIÓN: Opción de Estructuras Individuales --
-            CheckBox cbIndividual = new CheckBox 
-            { 
+            CheckBox cbIndividual = new CheckBox
+            {
                 Content = "Generate individual structures (allows manual moving)",
                 Margin = new Thickness(0, 5, 0, 15),
-                ToolTip = "If checked, creates zV_01, zV_02, etc. instead of a single LRT_Vertices structure."
+                ToolTip = "If checked, creates zH_01/zC_01, etc. instead of single LRT_Hot / LRT_Cold structures."
             };
             mainPanel.Children.Add(cbIndividual);
 
@@ -175,6 +191,7 @@ namespace VMS.TPS
                 double periDose = double.Parse(txtPeriDose.Text, CultureInfo.InvariantCulture);
                 double gradient = double.Parse(txtGradient.Text, CultureInfo.InvariantCulture);
                 double oarMargin = double.Parse(txtOARMargin.Text, CultureInfo.InvariantCulture);
+                double coldEnvelopeCm = double.Parse(txtColdEnvelope.Text, CultureInfo.InvariantCulture);
                 bool makeIndividual = cbIndividual.IsChecked == true;
                 bool manualBoost = cbManualBoost.IsChecked == true;
                 double manualDistCm = manualBoost ? double.Parse(txtManualDist.Text, CultureInfo.InvariantCulture) : 0.0;
@@ -182,7 +199,7 @@ namespace VMS.TPS
                 mainWindow.DialogResult = true;
                 mainWindow.Close();
 
-                GenerateLatticeGeometry(context, selectedGTV, selectedOARs, diameter, separation, tiltDeg, peakDose, periDose, gradient, oarMargin, makeIndividual, manualBoost, manualDistCm);
+                GenerateLatticeGeometry(context, selectedGTV, selectedOARs, diameter, separation, tiltDeg, peakDose, periDose, gradient, oarMargin, coldEnvelopeCm, makeIndividual, manualBoost, manualDistCm);
             };
 
             mainPanel.Children.Add(btnGenerate);
@@ -191,179 +208,381 @@ namespace VMS.TPS
         }
 
         // =========================================================================
-        // FASE 2: MOTOR GEOMÉTRICO LATTICE Y BOOLEANOS
+        // FASE 2: MOTOR GEOMÉTRICO LATTICE (HOT + COLD CHECKERBOARD)
         // =========================================================================
-        private void GenerateLatticeGeometry(ScriptContext context, Structure gtv, List<Structure> oars, double diameterCm, double separationCm, double tiltDeg, double peakDose, double periDose, double gradient, double oarMarginCm, bool makeIndividual, bool manualBoost, double manualDistCm)
+        private void GenerateLatticeGeometry(ScriptContext context, Structure gtv, List<Structure> oars,
+            double diameterCm, double separationCm, double tiltDeg,
+            double peakDose, double periDose, double gradient,
+            double oarMarginCm, double coldEnvelopeCm,
+            bool makeIndividual, bool manualBoost, double manualDistCm)
         {
+            StructureSet ss = context.StructureSet;
+
             try
             {
-                context.Patient.BeginModifications();
-                StructureSet ss = context.StructureSet;
-
-                double radiusMm = (diameterCm / 2.0) * 10.0;
-                double separationMm = separationCm * 10.0;
-                double oarMarginMm = oarMarginCm * 10.0;
-
-                // El margen de contracción define a qué distancia del borde del GTV
-                // queda el CENTRO de las esferas. En modo Boost Manual se toma directo
-                // de la distancia indicada por el usuario; si no, se deriva del gradiente
-                // de dosis (distancia necesaria para caer de la dosis pico a la periférica).
-                double totalContractionMarginMm;
-                if (manualBoost)
+                try
                 {
-                    totalContractionMarginMm = (manualDistCm * 10.0) + radiusMm;
-                }
-                else
-                {
-                    double doseDrop = peakDose - periDose;
-                    double dropRatePerMm = peakDose * (gradient / 100.0);
-                    double gradientMarginMm = doseDrop / dropRatePerMm;
-                    totalContractionMarginMm = gradientMarginMm + radiusMm;
-                }
+                    context.Patient.BeginModifications();
 
-                // Limpieza previa (Borra tanto el global como los individuales previos)
-                RemoveStructureIfExists(ss, "LRT_Volume");
-                RemoveStructureIfExists(ss, "LRT_Vertices");
-                var oldIndividuals = ss.Structures.Where(s => s.Id.StartsWith("zV_")).ToList();
-                foreach (var ind in oldIndividuals) ss.RemoveStructure(ind);
+                    double radiusMm = (diameterCm / 2.0) * 10.0;
+                    double separationMm = separationCm * 10.0;
+                    double oarMarginMm = oarMarginCm * 10.0;
+                    double coldEnvelopeMm = coldEnvelopeCm * 10.0;
+                    double tiltRad = tiltDeg * Math.PI / 180.0;
 
-                Structure vL = ss.AddStructure("CONTROL", "LRT_Volume");
-                Structure verticesStruct = null;
-                
-                if (!makeIndividual)
-                {
-                    verticesStruct = ss.AddStructure("CONTROL", "LRT_Vertices");
-                }
+                    double hotBorderClearanceMm = HotBorderClearanceCalculator.ComputeMm(peakDose, periDose, gradient, manualBoost, manualDistCm);
 
-                vL.SegmentVolume = gtv.SegmentVolume.Margin(-totalContractionMarginMm);
+                    CleanupPriorOutputs(ss);
 
-                if (vL.IsEmpty)
-                {
-                    MessageBox.Show($"El GTV es demasiado pequeño para acomodar el margen de seguridad de {totalContractionMarginMm:F1} mm.", "Límite Clínico Alcanzado", MessageBoxButton.OK, MessageBoxImage.Error);
-                    return;
-                }
-
-                foreach (var oar in oars)
-                {
-                    var oarExpanded = oar.SegmentVolume.Margin(oarMarginMm);
-                    vL.SegmentVolume = vL.SegmentVolume.Sub(oarExpanded);
-                }
-
-                if (vL.IsEmpty)
-                {
-                    MessageBox.Show("El LATTICE Volume se quedó sin espacio útil tras restar los OARs.", "Geometría Vacía", MessageBoxButton.OK, MessageBoxImage.Error);
-                    return;
-                }
-
-                VVector com = vL.CenterPoint;
-                var bounds = vL.MeshGeometry.Bounds;
-
-                List<VVector> gridPoints = new List<VVector>();
-
-                // La malla se genera en un sistema local (xLocal, yLocal, zLocal) centrado en
-                // el centroide y luego se rota "tiltDeg" grados alrededor del eje X (Izquierda-
-                // Derecha) antes de trasladarla al espacio del paciente. Con tiltDeg = 0 el
-                // comportamiento es el mismo grid cúbico alineado a los ejes de siempre. Con
-                // tiltDeg > 0, el paso a lo largo de Z-local también desplaza Y en el paciente,
-                // evitando que todos los vértices caigan en el mismo corte axial cuando el
-                // volumen disponible es delgado en Z (lesiones pequeñas o aplanadas).
-                double tiltRad = tiltDeg * Math.PI / 180.0;
-                double cosT = Math.Cos(tiltRad);
-                double sinT = Math.Sin(tiltRad);
-
-                double halfDiagonalMm = Math.Sqrt(
-                    Math.Pow(bounds.SizeX / 2.0, 2) +
-                    Math.Pow(bounds.SizeY / 2.0, 2) +
-                    Math.Pow(bounds.SizeZ / 2.0, 2));
-                int n = (int)Math.Ceiling(halfDiagonalMm / separationMm) + 1;
-
-                for (int i = -n; i <= n; i++)
-                {
-                    double xLocal = i * separationMm;
-                    for (int j = -n; j <= n; j++)
+                    Structure hotRegion = BuildHotRegion(ss, gtv, oars, hotBorderClearanceMm, radiusMm, oarMarginMm);
+                    if (hotRegion == null)
                     {
-                        double yLocal = j * separationMm;
-                        for (int k = -n; k <= n; k++)
-                        {
-                            double zLocal = k * separationMm;
-
-                            double yRot = yLocal * cosT - zLocal * sinT;
-                            double zRot = yLocal * sinT + zLocal * cosT;
-
-                            VVector pt = new VVector(com.x + xLocal, com.y + yRot, com.z + zRot);
-                            if (vL.IsPointInsideSegment(pt))
-                            {
-                                gridPoints.Add(pt);
-                            }
-                        }
+                        return;
                     }
-                }
 
-                if (gridPoints.Count == 0)
-                {
-                    MessageBox.Show("No caben vértices dentro del volumen LATTICE disponible.", "Sin Vértices", MessageBoxButton.OK, MessageBoxImage.Warning);
-                    return;
-                }
+                    Structure coldEnvelope = BuildColdEnvelope(ss, gtv, coldEnvelopeMm);
 
-                gridPoints = gridPoints.OrderBy(p => Math.Pow(p.x - com.x, 2) + Math.Pow(p.y - com.y, 2) + Math.Pow(p.z - com.z, 2)).ToList();
+                    Vec3 com;
+                    int n;
+                    ComputeGridExtent(hotRegion, coldEnvelope, separationMm, out com, out n);
 
-                double sphereVolCc = (4.0 / 3.0) * Math.PI * Math.Pow(radiusMm / 10.0, 3);
-                double gtvVolCc = gtv.Volume;
-                double maxRatio = 0.10;
-                int maxAllowedSpheres = (int)Math.Floor((gtvVolCc * maxRatio) / sphereVolCc);
+                    double gtvVolCc = gtv.Volume;
+                    double sphereVolCc = (4.0 / 3.0) * Math.PI * Math.Pow(radiusMm / 10.0, 3);
 
-                int finalSphereCount = gridPoints.Count;
-                bool wasTrimmed = false;
+                    List<ConfigScore> scores;
+                    List<GridBuildResult> builds;
+                    EvaluateAllConfigurations(hotRegion, coldEnvelope, com, separationMm, n, tiltRad, sphereVolCc, gtvVolCc, out scores, out builds);
 
-                if (finalSphereCount > maxAllowedSpheres)
-                {
-                    finalSphereCount = maxAllowedSpheres;
-                    wasTrimmed = true;
-                }
+                    int bestIdx = PhaseSelector.SelectBestConfigurationIndex(scores, RatioBandMinPercent, RatioBandMaxPercent);
+                    GridBuildResult winner = builds[bestIdx];
 
-                var finalPoints = gridPoints.Take(finalSphereCount).ToList();
+                    var unitSamples = HaltonSequence.GenerateUnitSphereSamples(HaltonSampleCount);
 
-                // Dibujar Físicamente las Esferas en Eclipse
-                int counter = 1;
-                foreach (var pt in finalPoints)
-                {
-                    if (makeIndividual)
+                    int haltonRejectedHot, haltonRejectedCold;
+                    List<GridCandidate> haltonHot = ApplyHaltonFiltering(winner.AcceptedHot, hotRegion, radiusMm, unitSamples, out haltonRejectedHot);
+                    List<GridCandidate> haltonCold = ApplyHaltonFiltering(winner.AcceptedCold, gtv, radiusMm, unitSamples, out haltonRejectedCold);
+
+                    bool wasTrimmed;
+                    int maxAllowedHot;
+                    List<GridCandidate> finalHot = ApplyHotVolumeCap(haltonHot, com, sphereVolCc, gtvVolCc, out wasTrimmed, out maxAllowedHot);
+                    List<GridCandidate> finalCold = haltonCold;
+
+                    if (finalHot.Count == 0 && finalCold.Count == 0)
                     {
-                        // Crear estructura individual (zV_01, zV_02...)
-                        string vName = $"zV_{counter:00}";
-                        Structure indStr = ss.AddStructure("CONTROL", vName);
-                        DrawSphere(indStr, pt, radiusMm, ss.Image);
-                        counter++;
+                        MessageBox.Show("No fue posible colocar ninguna esfera hot ni cold dentro de la geometría disponible.", "Sin Vértices", MessageBoxButton.OK, MessageBoxImage.Warning);
+                        return;
                     }
-                    else
+
+                    int omittedClearanceHot = scores[bestIdx].HotConsidered - winner.AcceptedHot.Count;
+                    int omittedClearanceCold = scores[bestIdx].ColdConsidered - winner.AcceptedCold.Count;
+                    double finalRatioPercent = (finalHot.Count * sphereVolCc / gtvVolCc) * 100.0;
+                    int occupiedPlanes = ComputeOccupiedPlaneCount(finalHot, finalCold, radiusMm, ss.Image);
+
+                    string confirmMsg = BuildConfirmationMessage(gtv.Id, finalHot.Count, finalCold.Count, occupiedPlanes,
+                        omittedClearanceHot, omittedClearanceCold, haltonRejectedHot, haltonRejectedCold, finalRatioPercent);
+
+                    MessageBoxResult confirmResult = MessageBox.Show(confirmMsg, "Confirmar Generación LATTICE", MessageBoxButton.YesNo, MessageBoxImage.Question);
+                    if (confirmResult != MessageBoxResult.Yes)
                     {
-                        // Dibujar sobre la estructura global
-                        DrawSphere(verticesStruct, pt, radiusMm, ss.Image);
+                        return;
                     }
+
+                    // El cold envelope es solo un andamio temporal: nunca se persiste.
+                    ss.RemoveStructure(coldEnvelope);
+
+                    bool actuallyIndividual;
+                    string fallbackNote;
+                    bool canProceed = DecideOutputMode(ss, makeIndividual, finalHot.Count, finalCold.Count, out actuallyIndividual, out fallbackNote);
+                    if (!canProceed)
+                    {
+                        return;
+                    }
+
+                    // La región hot se conserva como estructura de control persistente para QA visual.
+                    hotRegion.Id = "LRT_HotRegion";
+
+                    WriteOutputs(ss, ss.Image, finalHot, finalCold, radiusMm, actuallyIndividual);
+
+                    double effectiveHotMarginMm = hotBorderClearanceMm + radiusMm;
+                    string marginModeMsg = manualBoost
+                        ? $"Boost Manual (distancia al borde: {manualDistCm:F2} cm)"
+                        : $"Gradiente de Dosis ({gradient:F1} %/mm)";
+
+                    string msg = BuildFinalSummaryMessage(marginModeMsg, effectiveHotMarginMm, tiltDeg, finalHot.Count, finalCold.Count,
+                        occupiedPlanes, finalRatioPercent, actuallyIndividual, wasTrimmed, maxAllowedHot, fallbackNote);
+
+                    MessageBox.Show(msg, "LATTICE Generado", MessageBoxButton.OK, MessageBoxImage.Information);
                 }
-
-                double finalRatio = (finalSphereCount * sphereVolCc / gtvVolCc) * 100.0;
-
-                string marginModeMsg = manualBoost
-                    ? $"Boost Manual (distancia al borde: {manualDistCm:F2} cm)"
-                    : $"Gradiente de Dosis ({gradient:F1} %/mm)";
-
-                string msg = $"Geometría LATTICE generada con éxito.\n\n" +
-                             $"- Modo de margen: {marginModeMsg}\n" +
-                             $"- Margen interno de seguridad aplicado: {totalContractionMarginMm:F1} mm\n" +
-                             $"- Inclinación de malla vs. axial: {tiltDeg:F1}°\n" +
-                             $"- Vértices creados: {finalSphereCount}\n" +
-                             $"- Volume Ratio final: {finalRatio:F2}%\n" +
-                             $"- Modo: {(makeIndividual ? "Estructuras Individuales" : "Estructura Única")}\n";
-
-                if (wasTrimmed) msg += $"\n(Nota: Se recortaron vértices exteriores a un máximo de {maxAllowedSpheres} para respetar el Volume Ratio <= 10%).";
-
-                MessageBox.Show(msg, "LATTICE Generado", MessageBoxButton.OK, MessageBoxImage.Information);
+                finally
+                {
+                    // Cualquier estructura de andamiaje que no haya sido renombrada/eliminada
+                    // (éxito parcial, cancelación del usuario, o excepción) se limpia aquí.
+                    RemoveStructuresByPrefix(ss, "zTMP_");
+                }
             }
             catch (Exception ex)
             {
                 MessageBox.Show($"Ocurrió un error inesperado: {ex.Message}\n{ex.StackTrace}", "Error Crítico", MessageBoxButton.OK, MessageBoxImage.Error);
             }
+        }
+
+        private Structure BuildHotRegion(StructureSet ss, Structure gtv, List<Structure> oars, double hotBorderClearanceMm, double radiusMm, double oarMarginMm)
+        {
+            Structure hotRegion = ss.AddStructure("CONTROL", "zTMP_HotRegion");
+
+            // Erosión secuencial: primero el margen clínico de borde, luego el radio
+            // de la esfera (para que la esfera completa quepa dentro de la región).
+            hotRegion.SegmentVolume = gtv.SegmentVolume.Margin(-hotBorderClearanceMm).Margin(-radiusMm);
+
+            if (hotRegion.IsEmpty)
+            {
+                MessageBox.Show($"El GTV es demasiado pequeño para acomodar el margen hot de {hotBorderClearanceMm + radiusMm:F1} mm.", "Límite Clínico Alcanzado", MessageBoxButton.OK, MessageBoxImage.Error);
+                return null;
+            }
+
+            foreach (var oar in oars)
+            {
+                var oarExpanded = oar.SegmentVolume.Margin(radiusMm + oarMarginMm);
+                hotRegion.SegmentVolume = hotRegion.SegmentVolume.Sub(oarExpanded);
+            }
+
+            if (hotRegion.IsEmpty)
+            {
+                MessageBox.Show("La región hot se quedó sin espacio útil tras restar los OARs.", "Geometría Vacía", MessageBoxButton.OK, MessageBoxImage.Error);
+                return null;
+            }
+
+            return hotRegion;
+        }
+
+        private Structure BuildColdEnvelope(StructureSet ss, Structure gtv, double coldEnvelopeMm)
+        {
+            Structure coldEnvelope = ss.AddStructure("CONTROL", "zTMP_ColdEnvelope");
+            coldEnvelope.SegmentVolume = gtv.SegmentVolume.Margin(coldEnvelopeMm);
+            return coldEnvelope;
+        }
+
+        private void ComputeGridExtent(Structure hotRegion, Structure coldEnvelope, double separationMm, out Vec3 com, out int n)
+        {
+            com = ToVec3(hotRegion.CenterPoint);
+
+            var bounds = coldEnvelope.MeshGeometry.Bounds;
+            double halfDiagonalMm = Math.Sqrt(
+                Math.Pow(bounds.SizeX / 2.0, 2) +
+                Math.Pow(bounds.SizeY / 2.0, 2) +
+                Math.Pow(bounds.SizeZ / 2.0, 2));
+            n = (int)Math.Ceiling(halfDiagonalMm / separationMm) + 1;
+        }
+
+        private void EvaluateAllConfigurations(Structure hotRegion, Structure coldEnvelope, Vec3 com, double separationMm, int n, double tiltRad,
+            double sphereVolCc, double gtvVolCc, out List<ConfigScore> scores, out List<GridBuildResult> builds)
+        {
+            scores = new List<ConfigScore>();
+            builds = new List<GridBuildResult>();
+
+            Func<Vec3, bool> isInsideHot = p => hotRegion.IsPointInsideSegment(ToVVector(p));
+            Func<Vec3, bool> isInsideCold = p => coldEnvelope.IsPointInsideSegment(ToVVector(p));
+            Func<Vec3, bool> bboxFilter = BuildBoundingBoxFilter(coldEnvelope);
+
+            foreach (var phase in PhaseSelector.EnumerateConfigurations(separationMm))
+            {
+                GridBuildResult build = GridBuilder.BuildCandidateGrid(com, separationMm, n, tiltRad, phase, isInsideHot, isInsideCold, bboxFilter);
+                double ratio = (build.AcceptedHot.Count * sphereVolCc / gtvVolCc) * 100.0;
+                scores.Add(new ConfigScore(build.HotConsidered, build.AcceptedHot.Count, build.ColdConsidered, build.AcceptedCold.Count, ratio));
+                builds.Add(build);
+            }
+        }
+
+        private Func<Vec3, bool> BuildBoundingBoxFilter(Structure region)
+        {
+            var bounds = region.MeshGeometry.Bounds;
+            double x0 = bounds.X, x1 = bounds.X + bounds.SizeX;
+            double y0 = bounds.Y, y1 = bounds.Y + bounds.SizeY;
+            double z0 = bounds.Z, z1 = bounds.Z + bounds.SizeZ;
+            return p => p.X >= x0 && p.X <= x1 && p.Y >= y0 && p.Y <= y1 && p.Z >= z0 && p.Z <= z1;
+        }
+
+        private List<GridCandidate> ApplyHaltonFiltering(List<GridCandidate> candidates, Structure region, double radiusMm, IReadOnlyList<Vec3> unitSamples, out int rejectedCount)
+        {
+            var accepted = new List<GridCandidate>();
+            rejectedCount = 0;
+            Func<Vec3, bool> isInside = p => region.IsPointInsideSegment(ToVVector(p));
+
+            foreach (var candidate in candidates)
+            {
+                bool? preCheck = SphereOverlapSampler.ExtremalPreCheck(candidate.Position, radiusMm, isInside);
+                bool passes;
+
+                if (preCheck.HasValue)
+                {
+                    passes = preCheck.Value;
+                }
+                else
+                {
+                    int insideCount = SphereOverlapSampler.CountInside(candidate.Position, radiusMm, unitSamples, isInside);
+                    passes = SphereOverlapSampler.PassesThreshold(insideCount, unitSamples.Count);
+                }
+
+                if (passes)
+                {
+                    accepted.Add(candidate);
+                }
+                else
+                {
+                    rejectedCount++;
+                }
+            }
+
+            return accepted;
+        }
+
+        private List<GridCandidate> ApplyHotVolumeCap(List<GridCandidate> hotCandidates, Vec3 com, double sphereVolCc, double gtvVolCc, out bool wasTrimmed, out int maxAllowed)
+        {
+            const double maxRatio = 0.10;
+            maxAllowed = (int)Math.Floor((gtvVolCc * maxRatio) / sphereVolCc);
+            wasTrimmed = false;
+
+            if (hotCandidates.Count <= maxAllowed)
+            {
+                return hotCandidates;
+            }
+
+            wasTrimmed = true;
+            return hotCandidates
+                .OrderBy(c => (c.Position - com).LengthSquared)
+                .Take(Math.Max(maxAllowed, 0))
+                .ToList();
+        }
+
+        private int ComputeOccupiedPlaneCount(List<GridCandidate> hot, List<GridCandidate> cold, double radiusMm, VMS.TPS.Common.Model.API.Image image)
+        {
+            var planes = new HashSet<int>();
+            foreach (var c in hot.Concat(cold))
+            {
+                int minSlice, maxSlice;
+                GetSliceRange(ToVVector(c.Position), radiusMm, image, out minSlice, out maxSlice);
+                for (int s = minSlice; s <= maxSlice; s++)
+                {
+                    planes.Add(s);
+                }
+            }
+            return planes.Count;
+        }
+
+        private string BuildConfirmationMessage(string gtvId, int hotCount, int coldCount, int occupiedPlanes,
+            int omittedClearanceHot, int omittedClearanceCold, int omittedHaltonHot, int omittedHaltonCold, double ratioPercent)
+        {
+            string msg = $"Target: {gtvId}\n\n" +
+                         $"- Esferas Hot: {hotCount}\n" +
+                         $"- Esferas Cold: {coldCount}\n" +
+                         $"- Cortes axiales ocupados: {occupiedPlanes}\n" +
+                         $"- Omitidas por margen/OAR (hot): {omittedClearanceHot}\n" +
+                         $"- Omitidas por margen (cold): {omittedClearanceCold}\n" +
+                         $"- Omitidas por solape insuficiente (hot): {omittedHaltonHot}\n" +
+                         $"- Omitidas por solape insuficiente (cold): {omittedHaltonCold}\n" +
+                         $"- Volume Ratio (hot) analítico: {ratioPercent:F2}%\n";
+
+            if (ratioPercent < RatioBandMinPercent || ratioPercent > RatioBandMaxPercent)
+            {
+                msg += $"\nADVERTENCIA: el ratio está fuera de la banda de referencia clínica {RatioBandMinPercent:F0}-{RatioBandMaxPercent:F0}%.\n";
+            }
+
+            msg += "\n¿Deseas generar las estructuras con estos parámetros?";
+            return msg;
+        }
+
+        private bool DecideOutputMode(StructureSet ss, bool makeIndividual, int hotCount, int coldCount, out bool actuallyIndividual, out string fallbackNote)
+        {
+            fallbackNote = null;
+            actuallyIndividual = makeIndividual;
+
+            int existingCount = ss.Structures.Count();
+            int neededIndividual = hotCount + coldCount;
+            int neededCombined = (hotCount > 0 ? 1 : 0) + (coldCount > 0 ? 1 : 0);
+
+            if (actuallyIndividual && existingCount + neededIndividual > EclipseStructureLimit - StructureLimitSafetyBuffer)
+            {
+                actuallyIndividual = false;
+                fallbackNote = "\n(Nota: se generaron estructuras agrupadas en vez de individuales porque se alcanzaría el límite de 99 estructuras de Eclipse.)";
+            }
+
+            int neededFinal = actuallyIndividual ? neededIndividual : neededCombined;
+            if (existingCount + neededFinal > EclipseStructureLimit - StructureLimitSafetyBuffer)
+            {
+                MessageBox.Show($"No hay espacio suficiente en el Structure Set para generar el LATTICE (límite de {EclipseStructureLimit} estructuras de Eclipse). Elimina estructuras no utilizadas e intenta de nuevo.", "Límite de Estructuras Alcanzado", MessageBoxButton.OK, MessageBoxImage.Error);
+                return false;
+            }
+
+            return true;
+        }
+
+        private void WriteOutputs(StructureSet ss, VMS.TPS.Common.Model.API.Image image, List<GridCandidate> finalHot, List<GridCandidate> finalCold, double radiusMm, bool actuallyIndividual)
+        {
+            if (actuallyIndividual)
+            {
+                int counter = 1;
+                foreach (var c in finalHot)
+                {
+                    Structure s = ss.AddStructure("CONTROL", $"zH_{counter:00}");
+                    DrawSphere(s, ToVVector(c.Position), radiusMm, image);
+                    counter++;
+                }
+
+                counter = 1;
+                foreach (var c in finalCold)
+                {
+                    Structure s = ss.AddStructure("CONTROL", $"zC_{counter:00}");
+                    DrawSphere(s, ToVVector(c.Position), radiusMm, image);
+                    counter++;
+                }
+            }
+            else
+            {
+                if (finalHot.Count > 0)
+                {
+                    Structure hotStruct = ss.AddStructure("CONTROL", "LRT_Hot");
+                    foreach (var c in finalHot)
+                    {
+                        DrawSphere(hotStruct, ToVVector(c.Position), radiusMm, image);
+                    }
+                }
+
+                if (finalCold.Count > 0)
+                {
+                    Structure coldStruct = ss.AddStructure("CONTROL", "LRT_Cold");
+                    foreach (var c in finalCold)
+                    {
+                        DrawSphere(coldStruct, ToVVector(c.Position), radiusMm, image);
+                    }
+                }
+            }
+        }
+
+        private string BuildFinalSummaryMessage(string marginModeMsg, double effectiveHotMarginMm, double tiltDeg,
+            int hotCount, int coldCount, int occupiedPlanes, double finalRatioPercent, bool actuallyIndividual,
+            bool wasTrimmed, int maxAllowedHot, string fallbackNote)
+        {
+            string msg = $"Geometría LATTICE generada con éxito.\n\n" +
+                         $"- Modo de margen (hot): {marginModeMsg}\n" +
+                         $"- Margen hot aplicado (borde a centro): {effectiveHotMarginMm:F1} mm\n" +
+                         $"- Inclinación de malla vs. axial: {tiltDeg:F1}°\n" +
+                         $"- Esferas Hot creadas: {hotCount}\n" +
+                         $"- Esferas Cold creadas: {coldCount}\n" +
+                         $"- Cortes axiales ocupados: {occupiedPlanes}\n" +
+                         $"- Volume Ratio final (hot): {finalRatioPercent:F2}%\n" +
+                         $"- Modo de salida: {(actuallyIndividual ? "Estructuras Individuales" : "Estructura Única")}\n";
+
+            if (wasTrimmed)
+            {
+                msg += $"\n(Nota: Se recortaron esferas hot exteriores a un máximo de {maxAllowedHot} para respetar el Volume Ratio <= 10%).";
+            }
+
+            if (fallbackNote != null)
+            {
+                msg += fallbackNote;
+            }
+
+            return msg;
         }
 
         // =========================================================================
@@ -378,11 +597,43 @@ namespace VMS.TPS
             }
         }
 
+        private void RemoveStructuresByPrefix(StructureSet ss, string prefix)
+        {
+            var toRemove = ss.Structures.Where(s => s.Id.StartsWith(prefix)).ToList();
+            foreach (var s in toRemove)
+            {
+                ss.RemoveStructure(s);
+            }
+        }
+
+        private void CleanupPriorOutputs(StructureSet ss)
+        {
+            // Migración de nombres heredados (versiones previas del script)
+            RemoveStructureIfExists(ss, "LRT_Volume");
+            RemoveStructureIfExists(ss, "LRT_Vertices");
+            RemoveStructuresByPrefix(ss, "zV_");
+
+            // Salidas actuales
+            RemoveStructureIfExists(ss, "LRT_Hot");
+            RemoveStructureIfExists(ss, "LRT_Cold");
+            RemoveStructureIfExists(ss, "LRT_HotRegion");
+            RemoveStructuresByPrefix(ss, "zH_");
+            RemoveStructuresByPrefix(ss, "zC_");
+            RemoveStructuresByPrefix(ss, "zTMP_");
+        }
+
+        private static void GetSliceRange(VVector center, double radiusMm, VMS.TPS.Common.Model.API.Image image, out int minSlice, out int maxSlice)
+        {
+            double zRes = image.ZRes;
+            minSlice = Math.Max(0, (int)Math.Floor((center.z - radiusMm - image.Origin.z) / zRes));
+            maxSlice = Math.Min(image.ZSize - 1, (int)Math.Ceiling((center.z + radiusMm - image.Origin.z) / zRes));
+        }
+
         private void DrawSphere(Structure structure, VVector center, double radiusMm, VMS.TPS.Common.Model.API.Image image)
         {
             double zRes = image.ZRes;
-            int minSlice = Math.Max(0, (int)Math.Floor((center.z - radiusMm - image.Origin.z) / zRes));
-            int maxSlice = Math.Min(image.ZSize - 1, (int)Math.Ceiling((center.z + radiusMm - image.Origin.z) / zRes));
+            int minSlice, maxSlice;
+            GetSliceRange(center, radiusMm, image, out minSlice, out maxSlice);
 
             for (int s = minSlice; s <= maxSlice; s++)
             {
@@ -397,7 +648,7 @@ namespace VMS.TPS
             }
         }
 
-        private VVector[] GenerateCircle(VVector center, double radius, int segments = 36)
+        private static VVector[] GenerateCircle(VVector center, double radius, int segments = 36)
         {
             VVector[] pts = new VVector[segments];
             for (int i = 0; i < segments; i++)
@@ -406,6 +657,16 @@ namespace VMS.TPS
                 pts[i] = new VVector(center.x + radius * Math.Cos(angle), center.y + radius * Math.Sin(angle), center.z);
             }
             return pts;
+        }
+
+        private static Vec3 ToVec3(VVector v)
+        {
+            return new Vec3(v.x, v.y, v.z);
+        }
+
+        private static VVector ToVVector(Vec3 v)
+        {
+            return new VVector(v.X, v.Y, v.Z);
         }
     }
 }
