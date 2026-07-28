@@ -1,18 +1,21 @@
 # 🎯 ESAPI LATTICE Radiotherapy Generator
 
 ## 📖 Overview
-The **ESAPI LATTICE Generator** is an open-source automation tool designed for the Varian Eclipse Treatment Planning System (TPS). It automates the complex geometric creation of 3D spherical arrays (vertices) required for Spatially Fractionated Radiation Therapy (LATTICE). 
+The **ESAPI LATTICE Generator** is an open-source automation tool designed for the Varian Eclipse Treatment Planning System (TPS). It automates the complex geometric creation of the 3D hot-spot/cold-spot checkerboard pattern required for Spatially Fractionated Radiation Therapy (LATTICE).
 
-By leveraging ESAPI Boolean operations, this script eliminates manual contouring times, prevents geometric overlaps with Organs at Risk (OARs), and automatically calculates dynamic internal margins based on clinical dose-falloff constraints.
+By leveraging ESAPI Boolean operations, this script eliminates manual contouring times, prevents geometric overlaps with Organs at Risk (OARs), and automatically calculates dynamic internal margins based on clinical dose-falloff constraints. An automatic phase/parity search and a Halton-sequence overlap sampler pick and validate the grid placement, and a confirmation dialog lets you review the result before anything is written to the Structure Set.
 
 ## ✨ Key Features
-* **Automated Sphere Generation:** Instantly creates a 3D lattice of optimization spheres within a designated target volume (e.g., GTV).
-* **Dynamic Skin & OAR Sparing:** Automatically subtracts user-defined OARs and external body margins to prevent vertices from overlapping with critical structures.
-* **Parametric UI (WPF):** Intuitive user interface to define sphere radius, center-to-center spacing, and required dose-falloff margins.
-* **Volume Ratio Control:** Calculates and limits the total LATTICE volume to a maximum of 10% of the target volume, trimming excess spheres automatically.
-* **Individual or Grouped Output:** Generate a single combined `LRT_Vertices` structure, or check "Generate individual structures" to create separate `zV_01`, `zV_02`, ... structures per sphere for manual repositioning.
-* **Manual Boost Mode (SRS/SBRT):** Optionally bypass the dose-gradient margin calculation and set a fixed distance from the GTV border instead — useful for small lesions where the automatic dosimetric method leaves no room for vertices.
+* **Hot + Cold Checkerboard Generation:** Places both high-dose "hot" spheres and low-dose "cold" spheres in an alternating 3D checkerboard (parity) pattern — the full LATTICE technique, not just isolated peaks.
+* **Automatic Phase/Parity Selection:** Tries 16 grid phase/parity configurations and picks the one whose analytical hot-spot dose-volume ratio best fits the clinical reference band (2–4%).
+* **Halton-Sequence Overlap Sampling:** Validates each candidate sphere against the real (possibly concave) target/OAR geometry using a deterministic 513-point low-discrepancy sample, instead of a single center-point check — far more reliable for irregular GTVs.
+* **Dynamic Skin & OAR Sparing:** Automatically subtracts user-defined OARs (expanded by sphere radius + safety margin) from the hot region so no hot sphere can overlap a critical structure; cold spheres are deliberately allowed to approach OARs.
+* **Confirmation Dialog:** Before any structure is written, a summary dialog shows hot/cold counts, occupied axial planes, omission counts, and the final dose-volume ratio (with a warning if it falls outside the 2–4% reference band) — you choose whether to proceed.
+* **Eclipse 99-Structure Limit Handling:** Detects when individual per-sphere output would exceed Eclipse's structure-set limit and automatically falls back to combined `LRT_Hot`/`LRT_Cold` structures, noting this in the summary.
+* **Individual or Grouped Output:** Generate combined `LRT_Hot` / `LRT_Cold` structures, or check "Generate individual structures" to create separate `zH_01`, `zC_01`, ... structures per sphere for manual repositioning.
+* **Manual Boost Mode (SRS/SBRT):** Optionally bypass the dose-gradient margin calculation for hot spheres and set a fixed distance from the GTV border instead — useful for small lesions where the automatic dosimetric method leaves no room for vertices.
 * **Tilted Vertex Grid:** Adjustable grid tilt (°) relative to the axial plane keeps vertices from clustering on a single CT slice in thin or flattened lesions; the angle can be tuned per case (try 10–30°).
+* **Volume Ratio Control:** Calculates and limits the total hot-spot volume to a maximum of 10% of the target volume, trimming excess spheres automatically as a clinical safety backstop.
 
 ## 💻 System Requirements
 * **Eclipse TPS:** Version 15.5 or higher.
@@ -33,10 +36,11 @@ Because this project relies on external libraries and custom UI frameworks, **it
 1. Open a Patient and a Structure Set in Eclipse.
 2. Ensure you have a target structure contoured (e.g., `GTV`).
 3. Run the compiled LATTICE Generator `.dll`.
-4. In the UI window, select your Target Structure, OARs to avoid, and define your geometric parameters (Diameter, Separation, Grid Tilt).
-5. Choose your dose-margin mode: use the dose-falloff fields (Peak Dose, Peripheral Dose, Gradient) for standard LATTICE, or check **Manual Boost Mode (SRS/SBRT)** to set a fixed distance from the GTV border instead.
-6. Check **Generate individual structures** if you need each sphere as its own structure (`zV_01`, `zV_02`, ...) for manual adjustment; leave it unchecked to get a single `LRT_Vertices` structure.
-7. Click **Generate** and review the created structures in the TPS.
+4. In the UI window, select your Target Structure, OARs to avoid, and define your geometric parameters (Diameter, Separation, Grid Tilt, Cold Envelope Expansion).
+5. Choose your dose-margin mode for hot spheres: use the dose-falloff fields (Peak Dose, Peripheral Dose, Gradient) for standard LATTICE, or check **Manual Boost Mode (SRS/SBRT)** to set a fixed distance from the GTV border instead.
+6. Check **Generate individual structures** if you need each sphere as its own structure (`zH_01`, `zC_01`, ...) for manual adjustment; leave it unchecked to get combined `LRT_Hot` / `LRT_Cold` structures.
+7. Click **Generate**. The script computes the best grid phase/parity automatically and shows a **confirmation dialog** with hot/cold counts, occupied planes, omissions, and the dose-volume ratio.
+8. Review the summary and click **Yes** to write the structures, or **No** to cancel without changing the Structure Set. A persistent `LRT_HotRegion` structure is kept for visual QA of the allowed hot-sphere placement region.
 
 ## 📄 License
 This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
