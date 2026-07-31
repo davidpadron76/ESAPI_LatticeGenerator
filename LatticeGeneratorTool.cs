@@ -6,14 +6,15 @@ using System.Runtime.CompilerServices;
 using System.Text;
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Media;
 using System.Globalization;
 using VMS.TPS.Common.Model.API;
 using VMS.TPS.Common.Model.Types;
 using VMS.TPS.LatticeMath;
 
-[assembly: AssemblyVersion("1.0.0.1")]
-[assembly: AssemblyFileVersion("1.0.0.1")]
-[assembly: AssemblyInformationalVersion("1.0")]
+[assembly: AssemblyVersion("2.0.1.0")]
+[assembly: AssemblyFileVersion("2.0.1.0")]
+[assembly: AssemblyInformationalVersion("2.0.1")]
 [assembly: ESAPIScript(IsWriteable = true)]
 
 namespace VMS.TPS
@@ -25,6 +26,21 @@ namespace VMS.TPS
         private const int HaltonSampleCount = 513;
         private const double RatioBandMinPercent = 2.0;
         private const double RatioBandMaxPercent = 4.0;
+
+        // Colores de estructuras: hot y cold deben ser visualmente distinguibles
+        // en Eclipse (por defecto, todas las estructuras "CONTROL" salen magenta).
+        private static readonly Color HotStructureColor = Color.FromRgb(236, 0, 140);   // magenta: alta dosis
+        private static readonly Color ColdStructureColor = Color.FromRgb(0, 112, 192);  // azul: baja dosis
+        private static readonly Color HotRegionColor = Color.FromRgb(255, 193, 7);      // ámbar: región QA, no es una esfera
+
+        // Tema claro de alto contraste para la ventana WPF (no depender del tema
+        // heredado del sistema/Eclipse, que puede volver ilegibles los controles).
+        private static readonly Brush PanelBackgroundBrush = new SolidColorBrush(Color.FromRgb(0xF4, 0xF8, 0xFB));
+        private static readonly Brush HeaderTextBrush = new SolidColorBrush(Color.FromRgb(0x1B, 0x3A, 0x57));
+        private static readonly Brush LabelTextBrush = new SolidColorBrush(Color.FromRgb(0x2E, 0x2E, 0x2E));
+        private static readonly Brush FieldBackgroundBrush = Brushes.White;
+        private static readonly Brush FieldBorderBrush = new SolidColorBrush(Color.FromRgb(0x9F, 0xB8, 0xC9));
+        private static readonly Brush AccentBrush = new SolidColorBrush(Color.FromRgb(0x2E, 0x86, 0xC1));
 
         public Script()
         {
@@ -58,59 +74,66 @@ namespace VMS.TPS
                 Width = 420,
                 Height = 700,
                 WindowStartupLocation = WindowStartupLocation.CenterScreen,
-                ResizeMode = ResizeMode.NoResize
+                ResizeMode = ResizeMode.NoResize,
+                Background = PanelBackgroundBrush
             };
 
-            StackPanel mainPanel = new StackPanel { Margin = new Thickness(15) };
+            StackPanel mainPanel = new StackPanel { Margin = new Thickness(15), Background = PanelBackgroundBrush };
 
             // -- Sección A: Selección de Target --
-            mainPanel.Children.Add(new TextBlock { Text = "1. Target Selection (GTV >= 50cc):", FontWeight = FontWeights.Bold, Margin = new Thickness(0, 0, 0, 5) });
-            ComboBox cmbGTV = new ComboBox { DisplayMemberPath = "Id", ItemsSource = validGTVs, SelectedIndex = 0, Margin = new Thickness(0, 0, 0, 15) };
+            mainPanel.Children.Add(new TextBlock { Text = "1. Target Selection (GTV >= 50cc):", FontWeight = FontWeights.Bold, Foreground = HeaderTextBrush, Margin = new Thickness(0, 0, 0, 5) });
+            ComboBox cmbGTV = new ComboBox { DisplayMemberPath = "Id", ItemsSource = validGTVs, SelectedIndex = 0, Margin = new Thickness(0, 0, 0, 15), Background = FieldBackgroundBrush, Foreground = LabelTextBrush };
             mainPanel.Children.Add(cmbGTV);
 
             // -- Sección B: Parámetros --
-            mainPanel.Children.Add(new TextBlock { Text = "2. Geometric & Dosimetric Parameters:", FontWeight = FontWeights.Bold, Margin = new Thickness(0, 0, 0, 5) });
+            mainPanel.Children.Add(new TextBlock { Text = "2. Geometric & Dosimetric Parameters:", FontWeight = FontWeights.Bold, Foreground = HeaderTextBrush, Margin = new Thickness(0, 0, 0, 5) });
 
             var pnlParams = new System.Windows.Controls.Primitives.UniformGrid { Columns = 2 };
 
-            pnlParams.Children.Add(new TextBlock { Text = "Vertex Diameter (cm):", VerticalAlignment = VerticalAlignment.Center });
-            TextBox txtDiameter = new TextBox { Text = "1.0", Margin = new Thickness(5) };
+            pnlParams.Children.Add(new TextBlock { Text = "Vertex Diameter (cm):", Foreground = LabelTextBrush, VerticalAlignment = VerticalAlignment.Center });
+            TextBox txtDiameter = new TextBox { Text = "1.0", Margin = new Thickness(5), Background = FieldBackgroundBrush, Foreground = LabelTextBrush, BorderBrush = FieldBorderBrush };
             pnlParams.Children.Add(txtDiameter);
 
-            pnlParams.Children.Add(new TextBlock { Text = "Vertices Separation (cm):", VerticalAlignment = VerticalAlignment.Center });
-            TextBox txtSeparation = new TextBox { Text = "3.0", Margin = new Thickness(5) };
+            pnlParams.Children.Add(new TextBlock { Text = "Vertices Separation (cm):", Foreground = LabelTextBrush, VerticalAlignment = VerticalAlignment.Center });
+            TextBox txtSeparation = new TextBox { Text = "3.0", Margin = new Thickness(5), Background = FieldBackgroundBrush, Foreground = LabelTextBrush, BorderBrush = FieldBorderBrush };
             pnlParams.Children.Add(txtSeparation);
 
-            pnlParams.Children.Add(new TextBlock { Text = "Grid Tilt vs. Axial (°):", VerticalAlignment = VerticalAlignment.Center });
+            pnlParams.Children.Add(new TextBlock { Text = "Grid Tilt vs. Axial (°):", Foreground = LabelTextBrush, VerticalAlignment = VerticalAlignment.Center });
             TextBox txtTiltDeg = new TextBox
             {
                 Text = "15.0",
                 Margin = new Thickness(5),
+                Background = FieldBackgroundBrush,
+                Foreground = LabelTextBrush,
+                BorderBrush = FieldBorderBrush,
                 ToolTip = "Inclina la malla de vértices respecto al plano axial (eje Izquierda-Derecha) para que no queden todos en el mismo corte. Prueba valores entre 10 y 30°."
             };
             pnlParams.Children.Add(txtTiltDeg);
 
-            pnlParams.Children.Add(new TextBlock { Text = "Peak Dose (Gy):", VerticalAlignment = VerticalAlignment.Center });
-            TextBox txtPeakDose = new TextBox { Text = "20.0", Margin = new Thickness(5) };
+            pnlParams.Children.Add(new TextBlock { Text = "Peak Dose (Gy):", Foreground = LabelTextBrush, VerticalAlignment = VerticalAlignment.Center });
+            TextBox txtPeakDose = new TextBox { Text = "20.0", Margin = new Thickness(5), Background = FieldBackgroundBrush, Foreground = LabelTextBrush, BorderBrush = FieldBorderBrush };
             pnlParams.Children.Add(txtPeakDose);
 
-            pnlParams.Children.Add(new TextBlock { Text = "Peripheral Dose Limit (Gy):", VerticalAlignment = VerticalAlignment.Center });
-            TextBox txtPeriDose = new TextBox { Text = "3.0", Margin = new Thickness(5) };
+            pnlParams.Children.Add(new TextBlock { Text = "Peripheral Dose Limit (Gy):", Foreground = LabelTextBrush, VerticalAlignment = VerticalAlignment.Center });
+            TextBox txtPeriDose = new TextBox { Text = "3.0", Margin = new Thickness(5), Background = FieldBackgroundBrush, Foreground = LabelTextBrush, BorderBrush = FieldBorderBrush };
             pnlParams.Children.Add(txtPeriDose);
 
-            pnlParams.Children.Add(new TextBlock { Text = "Gradient Fall-off (%/mm):", VerticalAlignment = VerticalAlignment.Center });
-            TextBox txtGradient = new TextBox { Text = "10.0", Margin = new Thickness(5) };
+            pnlParams.Children.Add(new TextBlock { Text = "Gradient Fall-off (%/mm):", Foreground = LabelTextBrush, VerticalAlignment = VerticalAlignment.Center });
+            TextBox txtGradient = new TextBox { Text = "10.0", Margin = new Thickness(5), Background = FieldBackgroundBrush, Foreground = LabelTextBrush, BorderBrush = FieldBorderBrush };
             pnlParams.Children.Add(txtGradient);
 
-            pnlParams.Children.Add(new TextBlock { Text = "Boost: Distancia al borde GTV (cm):", VerticalAlignment = VerticalAlignment.Center });
-            TextBox txtManualDist = new TextBox { Text = "0.2", Margin = new Thickness(5), IsEnabled = false };
+            pnlParams.Children.Add(new TextBlock { Text = "Boost: Distancia al borde GTV (cm):", Foreground = LabelTextBrush, VerticalAlignment = VerticalAlignment.Center });
+            TextBox txtManualDist = new TextBox { Text = "0.2", Margin = new Thickness(5), IsEnabled = false, Background = FieldBackgroundBrush, Foreground = LabelTextBrush, BorderBrush = FieldBorderBrush };
             pnlParams.Children.Add(txtManualDist);
 
-            pnlParams.Children.Add(new TextBlock { Text = "Cold Envelope Expansion (cm):", VerticalAlignment = VerticalAlignment.Center });
+            pnlParams.Children.Add(new TextBlock { Text = "Cold Envelope Expansion (cm):", Foreground = LabelTextBrush, VerticalAlignment = VerticalAlignment.Center });
             TextBox txtColdEnvelope = new TextBox
             {
                 Text = "0.5",
                 Margin = new Thickness(5),
+                Background = FieldBackgroundBrush,
+                Foreground = LabelTextBrush,
+                BorderBrush = FieldBorderBrush,
                 ToolTip = "Distancia hacia afuera del borde del GTV hasta donde pueden extenderse las esferas 'cold' (valles de baja dosis)."
             };
             pnlParams.Children.Add(txtColdEnvelope);
@@ -125,6 +148,7 @@ namespace VMS.TPS
             {
                 Content = "Modo Boost Manual (SRS/SBRT): usar distancia fija al borde en vez de gradiente de dosis",
                 Margin = new Thickness(0, 5, 0, 10),
+                Foreground = LabelTextBrush,
                 ToolTip = "Ideal para lesiones pequeñas donde el cálculo dosimétrico automático no deja espacio para vértices. Define directamente qué tan lejos del borde del GTV se ubica la superficie de la esfera hot."
             };
             cbManualBoost.Checked += (sender, e) =>
@@ -144,20 +168,23 @@ namespace VMS.TPS
             mainPanel.Children.Add(cbManualBoost);
 
             // -- Sección C: OARs a evitar --
-            mainPanel.Children.Add(new TextBlock { Text = "3. Avoidance Structures (OARs):", FontWeight = FontWeights.Bold, Margin = new Thickness(0, 15, 0, 5) });
+            mainPanel.Children.Add(new TextBlock { Text = "3. Avoidance Structures (OARs):", FontWeight = FontWeights.Bold, Foreground = HeaderTextBrush, Margin = new Thickness(0, 15, 0, 5) });
             ListBox lstOARs = new ListBox
             {
                 SelectionMode = SelectionMode.Multiple,
                 DisplayMemberPath = "Id",
                 ItemsSource = allStructures,
                 Height = 80,
-                Margin = new Thickness(0, 0, 0, 5)
+                Margin = new Thickness(0, 0, 0, 5),
+                Background = FieldBackgroundBrush,
+                Foreground = LabelTextBrush,
+                BorderBrush = FieldBorderBrush
             };
             mainPanel.Children.Add(lstOARs);
 
             StackPanel pnlOARMargin = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 0, 0, 10) };
-            pnlOARMargin.Children.Add(new TextBlock { Text = "OAR Safety Margin (cm) — Hot region only: ", VerticalAlignment = VerticalAlignment.Center });
-            TextBox txtOARMargin = new TextBox { Text = "0.5", Width = 50 };
+            pnlOARMargin.Children.Add(new TextBlock { Text = "OAR Safety Margin (cm) — Hot region only: ", Foreground = LabelTextBrush, VerticalAlignment = VerticalAlignment.Center });
+            TextBox txtOARMargin = new TextBox { Text = "0.5", Width = 50, Background = FieldBackgroundBrush, Foreground = LabelTextBrush, BorderBrush = FieldBorderBrush };
             pnlOARMargin.Children.Add(txtOARMargin);
             mainPanel.Children.Add(pnlOARMargin);
 
@@ -166,6 +193,7 @@ namespace VMS.TPS
             {
                 Content = "Generate individual structures (allows manual moving)",
                 Margin = new Thickness(0, 5, 0, 15),
+                Foreground = LabelTextBrush,
                 ToolTip = "If checked, creates zH_01/zC_01, etc. instead of single LRT_Hot / LRT_Cold structures."
             };
             mainPanel.Children.Add(cbIndividual);
@@ -176,7 +204,8 @@ namespace VMS.TPS
                 Content = "Generate LATTICE Geometry",
                 Height = 40,
                 FontWeight = FontWeights.Bold,
-                Background = System.Windows.Media.Brushes.LightBlue
+                Background = AccentBrush,
+                Foreground = Brushes.White
             };
 
             btnGenerate.Click += (sender, e) =>
@@ -329,6 +358,7 @@ namespace VMS.TPS
         private Structure BuildHotRegion(StructureSet ss, Structure gtv, List<Structure> oars, double hotBorderClearanceMm, double radiusMm, double oarMarginMm)
         {
             Structure hotRegion = ss.AddStructure("CONTROL", "zTMP_HotRegion");
+            hotRegion.Color = HotRegionColor;
 
             // Erosión secuencial: primero el margen clínico de borde, luego el radio
             // de la esfera (para que la esfera completa quepa dentro de la región).
@@ -524,6 +554,7 @@ namespace VMS.TPS
                 foreach (var c in finalHot)
                 {
                     Structure s = ss.AddStructure("CONTROL", $"zH_{counter:00}");
+                    s.Color = HotStructureColor;
                     DrawSphere(s, ToVVector(c.Position), radiusMm, image);
                     counter++;
                 }
@@ -532,6 +563,7 @@ namespace VMS.TPS
                 foreach (var c in finalCold)
                 {
                     Structure s = ss.AddStructure("CONTROL", $"zC_{counter:00}");
+                    s.Color = ColdStructureColor;
                     DrawSphere(s, ToVVector(c.Position), radiusMm, image);
                     counter++;
                 }
@@ -541,6 +573,7 @@ namespace VMS.TPS
                 if (finalHot.Count > 0)
                 {
                     Structure hotStruct = ss.AddStructure("CONTROL", "LRT_Hot");
+                    hotStruct.Color = HotStructureColor;
                     foreach (var c in finalHot)
                     {
                         DrawSphere(hotStruct, ToVVector(c.Position), radiusMm, image);
@@ -550,6 +583,7 @@ namespace VMS.TPS
                 if (finalCold.Count > 0)
                 {
                     Structure coldStruct = ss.AddStructure("CONTROL", "LRT_Cold");
+                    coldStruct.Color = ColdStructureColor;
                     foreach (var c in finalCold)
                     {
                         DrawSphere(coldStruct, ToVVector(c.Position), radiusMm, image);
