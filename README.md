@@ -19,15 +19,15 @@ By leveraging ESAPI Boolean operations, this script eliminates manual contouring
 
 ## 💻 System Requirements
 * **Eclipse TPS:** Version 15.5 or higher.
-* **.NET Framework:** Compatible with 4.5 or higher (Ensure your Visual Studio project target framework matches your clinic's ESAPI version).
-* **Dependencies:** `EsapiEssentials` (via NuGet).
+* **.NET Framework:** 4.8 (matches the project's `TargetFrameworkVersion`; adjust if your clinic's ESAPI version requires a different one).
+* **Dependencies:** No NuGet packages. The project references `VMS.TPS.Common.Model.API.dll` and `VMS.TPS.Common.Model.Types.dll` directly from your local Eclipse/ESAPI install (by default `C:\Program Files\Varian\RTM\18.0\esapi\API\`).
 
 ## 🛠️ Installation & Compilation (Important)
 Because this project relies on external libraries and custom UI frameworks, **it cannot be run directly as a single `.cs` file in the Eclipse Script Runner.** It must be compiled into a `.dll` library.
 
 1. Clone or download this repository to your local machine.
 2. Open the solution file (`.sln`) using **Visual Studio**.
-3. In the Solution Explorer, right-click the solution and select **Restore NuGet Packages** (This will download the required `EsapiEssentials` library).
+3. In Solution Explorer, check the `VMS.TPS.Common.Model.API` and `VMS.TPS.Common.Model.Types` references — if your ESAPI install lives at a different path/version than `C:\Program Files\Varian\RTM\18.0\esapi\API\`, update each reference's **Path** property (or edit the `HintPath` in `LatticeGeneratorTool.csproj`) to point to your local ESAPI API DLLs.
 4. Build the solution (`Ctrl + Shift + B` or `Build > Build Solution`).
 5. Locate the compiled `.dll` file inside the `bin\Debug` or `bin\Release` folder.
 6. In Eclipse, open the Script Runner, navigate to the folder containing your new `.dll`, and execute it.
