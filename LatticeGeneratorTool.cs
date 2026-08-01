@@ -12,9 +12,9 @@ using VMS.TPS.Common.Model.API;
 using VMS.TPS.Common.Model.Types;
 using VMS.TPS.LatticeMath;
 
-[assembly: AssemblyVersion("2.0.1.0")]
-[assembly: AssemblyFileVersion("2.0.1.0")]
-[assembly: AssemblyInformationalVersion("2.0.1")]
+[assembly: AssemblyVersion("2.0.2.0")]
+[assembly: AssemblyFileVersion("2.0.2.0")]
+[assembly: AssemblyInformationalVersion("2.0.2")]
 [assembly: ESAPIScript(IsWriteable = true)]
 
 namespace VMS.TPS
@@ -213,17 +213,28 @@ namespace VMS.TPS
                 Structure selectedGTV = cmbGTV.SelectedItem as Structure;
                 List<Structure> selectedOARs = lstOARs.SelectedItems.Cast<Structure>().ToList();
 
-                double diameter = double.Parse(txtDiameter.Text, CultureInfo.InvariantCulture);
-                double separation = double.Parse(txtSeparation.Text, CultureInfo.InvariantCulture);
-                double tiltDeg = double.Parse(txtTiltDeg.Text, CultureInfo.InvariantCulture);
-                double peakDose = double.Parse(txtPeakDose.Text, CultureInfo.InvariantCulture);
-                double periDose = double.Parse(txtPeriDose.Text, CultureInfo.InvariantCulture);
-                double gradient = double.Parse(txtGradient.Text, CultureInfo.InvariantCulture);
-                double oarMargin = double.Parse(txtOARMargin.Text, CultureInfo.InvariantCulture);
-                double coldEnvelopeCm = double.Parse(txtColdEnvelope.Text, CultureInfo.InvariantCulture);
-                bool makeIndividual = cbIndividual.IsChecked == true;
-                bool manualBoost = cbManualBoost.IsChecked == true;
-                double manualDistCm = manualBoost ? double.Parse(txtManualDist.Text, CultureInfo.InvariantCulture) : 0.0;
+                double diameter, separation, tiltDeg, peakDose, periDose, gradient, oarMargin, coldEnvelopeCm, manualDistCm;
+                bool makeIndividual, manualBoost;
+
+                try
+                {
+                    diameter = double.Parse(txtDiameter.Text, CultureInfo.InvariantCulture);
+                    separation = double.Parse(txtSeparation.Text, CultureInfo.InvariantCulture);
+                    tiltDeg = double.Parse(txtTiltDeg.Text, CultureInfo.InvariantCulture);
+                    peakDose = double.Parse(txtPeakDose.Text, CultureInfo.InvariantCulture);
+                    periDose = double.Parse(txtPeriDose.Text, CultureInfo.InvariantCulture);
+                    gradient = double.Parse(txtGradient.Text, CultureInfo.InvariantCulture);
+                    oarMargin = double.Parse(txtOARMargin.Text, CultureInfo.InvariantCulture);
+                    coldEnvelopeCm = double.Parse(txtColdEnvelope.Text, CultureInfo.InvariantCulture);
+                    makeIndividual = cbIndividual.IsChecked == true;
+                    manualBoost = cbManualBoost.IsChecked == true;
+                    manualDistCm = manualBoost ? double.Parse(txtManualDist.Text, CultureInfo.InvariantCulture) : 0.0;
+                }
+                catch (Exception ex) when (ex is FormatException || ex is OverflowException)
+                {
+                    MessageBox.Show("Uno o más campos numéricos están vacíos o contienen un valor inválido. Revisa que todos usen punto decimal (ej. 1.0) y vuelve a intentar.", "Entrada Inválida", MessageBoxButton.OK, MessageBoxImage.Warning);
+                    return;
+                }
 
                 mainWindow.DialogResult = true;
                 mainWindow.Close();
