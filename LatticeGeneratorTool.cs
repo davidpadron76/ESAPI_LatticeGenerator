@@ -12,9 +12,9 @@ using VMS.TPS.Common.Model.API;
 using VMS.TPS.Common.Model.Types;
 using VMS.TPS.LatticeMath;
 
-[assembly: AssemblyVersion("2.0.4.0")]
-[assembly: AssemblyFileVersion("2.0.4.0")]
-[assembly: AssemblyInformationalVersion("2.0.4")]
+[assembly: AssemblyVersion("2.0.5.0")]
+[assembly: AssemblyFileVersion("2.0.5.0")]
+[assembly: AssemblyInformationalVersion("2.0.5")]
 [assembly: ESAPIScript(IsWriteable = true)]
 
 namespace VMS.TPS
@@ -91,13 +91,15 @@ namespace VMS.TPS
                 Background = PanelBackgroundBrush
             };
 
-            // Los controles internos que el propio WPF genera (ej. la barra de
-            // desplazamiento del ListBox de OARs) no son creados por este script,
-            // así que no se les puede asignar un Style local directamente. Se
-            // registra aquí un estilo implícito vacío para ScrollBar, con alcance
-            // a esta ventana, que tiene prioridad sobre cualquier estilo implícito
-            // heredado de Eclipse a nivel de Application.
+            // Los controles internos que el propio WPF genera por cada fila/elemento
+            // (la barra de desplazamiento del ListBox, cada ListBoxItem/ComboBoxItem)
+            // no son creados por este script, así que no se les puede asignar un
+            // Style local directamente. Se registran aquí estilos implícitos vacíos
+            // con alcance a esta ventana, que tienen prioridad sobre cualquier estilo
+            // implícito heredado de Eclipse a nivel de Application.
             mainWindow.Resources.Add(typeof(System.Windows.Controls.Primitives.ScrollBar), new Style(typeof(System.Windows.Controls.Primitives.ScrollBar)));
+            mainWindow.Resources.Add(typeof(ListBoxItem), new Style(typeof(ListBoxItem)));
+            mainWindow.Resources.Add(typeof(ComboBoxItem), new Style(typeof(ComboBoxItem)));
 
             StackPanel mainPanel = new StackPanel { Margin = new Thickness(15), Background = PanelBackgroundBrush };
 
