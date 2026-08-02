@@ -6,6 +6,17 @@ Versions correspond to the `AssemblyVersion`/`AssemblyFileVersion` embedded in
 dialog after running the script — use it to confirm which build was used for
 a given approval/QA record.
 
+## [2.0.7.0] - 2026-08-02
+### Changed
+- Cold spheres are accepted with as little as ~50% overlap with the GTV
+  (so their placement can hug the target border), but the drawn geometry
+  previously wasn't clipped, so cold structures could visually extend past
+  the GTV contour. `WriteOutputs` now intersects each cold structure's
+  drawn geometry against the GTV (`SegmentVolume.And`) after drawing, so
+  no cold structure ever extends beyond the target. Hot spheres are
+  unaffected — they're placed via an eroded region that already guarantees
+  they never leave the GTV.
+
 ## [2.0.6.0] - 2026-08-02
 ### Added
 - **Second grid tilt axis ("Grid Tilt vs. Sagittal")**: the existing axial
