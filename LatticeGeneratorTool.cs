@@ -12,9 +12,9 @@ using VMS.TPS.Common.Model.API;
 using VMS.TPS.Common.Model.Types;
 using VMS.TPS.LatticeMath;
 
-[assembly: AssemblyVersion("2.0.3.0")]
-[assembly: AssemblyFileVersion("2.0.3.0")]
-[assembly: AssemblyInformationalVersion("2.0.3")]
+[assembly: AssemblyVersion("2.0.6.0")]
+[assembly: AssemblyFileVersion("2.0.6.0")]
+[assembly: AssemblyInformationalVersion("2.0.6")]
 [assembly: ESAPIScript(IsWriteable = true)]
 
 namespace VMS.TPS
@@ -91,6 +91,16 @@ namespace VMS.TPS
                 Background = PanelBackgroundBrush
             };
 
+            // Los controles internos que el propio WPF genera por cada fila/elemento
+            // (la barra de desplazamiento del ListBox, cada ListBoxItem/ComboBoxItem)
+            // no son creados por este script, así que no se les puede asignar un
+            // Style local directamente. Se registran aquí estilos implícitos vacíos
+            // con alcance a esta ventana, que tienen prioridad sobre cualquier estilo
+            // implícito heredado de Eclipse a nivel de Application.
+            mainWindow.Resources.Add(typeof(System.Windows.Controls.Primitives.ScrollBar), new Style(typeof(System.Windows.Controls.Primitives.ScrollBar)));
+            mainWindow.Resources.Add(typeof(ListBoxItem), new Style(typeof(ListBoxItem)));
+            mainWindow.Resources.Add(typeof(ComboBoxItem), new Style(typeof(ComboBoxItem)));
+
             StackPanel mainPanel = new StackPanel { Margin = new Thickness(15), Background = PanelBackgroundBrush };
 
             // -- Sección A: Selección de Target --
@@ -123,6 +133,19 @@ namespace VMS.TPS
                 ToolTip = "Inclina la malla de vértices respecto al plano axial (eje Izquierda-Derecha) para que no queden todos en el mismo corte. Prueba valores entre 10 y 30°."
             };
             pnlParams.Children.Add(txtTiltDeg);
+
+            pnlParams.Children.Add(new TextBlock { Text = "Grid Tilt vs. Sagittal (°):", Foreground = LabelTextBrush, VerticalAlignment = VerticalAlignment.Center });
+            TextBox txtTiltSagittalDeg = new TextBox
+            {
+                Style = PlainTextBoxStyle,
+                Text = "15.0",
+                Margin = new Thickness(5),
+                Background = FieldBackgroundBrush,
+                Foreground = LabelTextBrush,
+                BorderBrush = FieldBorderBrush,
+                ToolTip = "Inclina la malla alrededor del eje Superior-Inferior para que no queden todas las esferas en el mismo plano sagital. Útil cuando el target es angosto en la dirección Izquierda-Derecha. Prueba valores entre 10 y 30°."
+            };
+            pnlParams.Children.Add(txtTiltSagittalDeg);
 
             pnlParams.Children.Add(new TextBlock { Text = "Peak Dose (Gy):", Foreground = LabelTextBrush, VerticalAlignment = VerticalAlignment.Center });
             TextBox txtPeakDose = new TextBox { Style = PlainTextBoxStyle, Text = "20.0", Margin = new Thickness(5), Background = FieldBackgroundBrush, Foreground = LabelTextBrush, BorderBrush = FieldBorderBrush };
@@ -232,7 +255,7 @@ namespace VMS.TPS
                 Structure selectedGTV = cmbGTV.SelectedItem as Structure;
                 List<Structure> selectedOARs = lstOARs.SelectedItems.Cast<Structure>().ToList();
 
-                double diameter, separation, tiltDeg, peakDose, periDose, gradient, oarMargin, coldEnvelopeCm, manualDistCm;
+                double diameter, separation, tiltDeg, tiltSagittalDeg, peakDose, periDose, gradient, oarMargin, coldEnvelopeCm, manualDistCm;
                 bool makeIndividual, manualBoost;
 
                 try
@@ -240,6 +263,7 @@ namespace VMS.TPS
                     diameter = double.Parse(txtDiameter.Text, CultureInfo.InvariantCulture);
                     separation = double.Parse(txtSeparation.Text, CultureInfo.InvariantCulture);
                     tiltDeg = double.Parse(txtTiltDeg.Text, CultureInfo.InvariantCulture);
+                    tiltSagittalDeg = double.Parse(txtTiltSagittalDeg.Text, CultureInfo.InvariantCulture);
                     peakDose = double.Parse(txtPeakDose.Text, CultureInfo.InvariantCulture);
                     periDose = double.Parse(txtPeriDose.Text, CultureInfo.InvariantCulture);
                     gradient = double.Parse(txtGradient.Text, CultureInfo.InvariantCulture);
@@ -258,7 +282,7 @@ namespace VMS.TPS
                 mainWindow.DialogResult = true;
                 mainWindow.Close();
 
-                GenerateLatticeGeometry(context, selectedGTV, selectedOARs, diameter, separation, tiltDeg, peakDose, periDose, gradient, oarMargin, coldEnvelopeCm, makeIndividual, manualBoost, manualDistCm);
+                GenerateLatticeGeometry(context, selectedGTV, selectedOARs, diameter, separation, tiltDeg, tiltSagittalDeg, peakDose, periDose, gradient, oarMargin, coldEnvelopeCm, makeIndividual, manualBoost, manualDistCm);
             };
 
             mainPanel.Children.Add(btnGenerate);
@@ -270,7 +294,7 @@ namespace VMS.TPS
         // FASE 2: MOTOR GEOMÉTRICO LATTICE (HOT + COLD CHECKERBOARD)
         // =========================================================================
         private void GenerateLatticeGeometry(ScriptContext context, Structure gtv, List<Structure> oars,
-            double diameterCm, double separationCm, double tiltDeg,
+            double diameterCm, double separationCm, double tiltDeg, double tiltSagittalDeg,
             double peakDose, double periDose, double gradient,
             double oarMarginCm, double coldEnvelopeCm,
             bool makeIndividual, bool manualBoost, double manualDistCm)
@@ -287,7 +311,8 @@ namespace VMS.TPS
                     double separationMm = separationCm * 10.0;
                     double oarMarginMm = oarMarginCm * 10.0;
                     double coldEnvelopeMm = coldEnvelopeCm * 10.0;
-                    double tiltRad = tiltDeg * Math.PI / 180.0;
+                    double tiltAxialRad = tiltDeg * Math.PI / 180.0;
+                    double tiltSagittalRad = tiltSagittalDeg * Math.PI / 180.0;
 
                     double hotBorderClearanceMm = HotBorderClearanceCalculator.ComputeMm(peakDose, periDose, gradient, manualBoost, manualDistCm);
 
@@ -310,7 +335,7 @@ namespace VMS.TPS
 
                     List<ConfigScore> scores;
                     List<GridBuildResult> builds;
-                    EvaluateAllConfigurations(hotRegion, coldEnvelope, com, separationMm, n, tiltRad, sphereVolCc, gtvVolCc, out scores, out builds);
+                    EvaluateAllConfigurations(hotRegion, coldEnvelope, com, separationMm, n, tiltAxialRad, tiltSagittalRad, sphereVolCc, gtvVolCc, out scores, out builds);
 
                     int bestIdx = PhaseSelector.SelectBestConfigurationIndex(scores, RatioBandMinPercent, RatioBandMaxPercent);
                     GridBuildResult winner = builds[bestIdx];
@@ -367,7 +392,7 @@ namespace VMS.TPS
                         ? $"Boost Manual (distancia al borde: {manualDistCm:F2} cm)"
                         : $"Gradiente de Dosis ({gradient:F1} %/mm)";
 
-                    string msg = BuildFinalSummaryMessage(marginModeMsg, effectiveHotMarginMm, tiltDeg, finalHot.Count, finalCold.Count,
+                    string msg = BuildFinalSummaryMessage(marginModeMsg, effectiveHotMarginMm, tiltDeg, tiltSagittalDeg, finalHot.Count, finalCold.Count,
                         occupiedPlanes, finalRatioPercent, actuallyIndividual, wasTrimmed, maxAllowedHot, fallbackNote);
 
                     MessageBox.Show(msg, "LATTICE Generado", MessageBoxButton.OK, MessageBoxImage.Information);
@@ -434,7 +459,7 @@ namespace VMS.TPS
             n = (int)Math.Ceiling(halfDiagonalMm / separationMm) + 1;
         }
 
-        private void EvaluateAllConfigurations(Structure hotRegion, Structure coldEnvelope, Vec3 com, double separationMm, int n, double tiltRad,
+        private void EvaluateAllConfigurations(Structure hotRegion, Structure coldEnvelope, Vec3 com, double separationMm, int n, double tiltAxialRad, double tiltSagittalRad,
             double sphereVolCc, double gtvVolCc, out List<ConfigScore> scores, out List<GridBuildResult> builds)
         {
             scores = new List<ConfigScore>();
@@ -446,7 +471,7 @@ namespace VMS.TPS
 
             foreach (var phase in PhaseSelector.EnumerateConfigurations(separationMm))
             {
-                GridBuildResult build = GridBuilder.BuildCandidateGrid(com, separationMm, n, tiltRad, phase, isInsideHot, isInsideCold, bboxFilter);
+                GridBuildResult build = GridBuilder.BuildCandidateGrid(com, separationMm, n, tiltAxialRad, tiltSagittalRad, phase, isInsideHot, isInsideCold, bboxFilter);
                 double ratio = (build.AcceptedHot.Count * sphereVolCc / gtvVolCc) * 100.0;
                 scores.Add(new ConfigScore(build.HotConsidered, build.AcceptedHot.Count, build.ColdConsidered, build.AcceptedCold.Count, ratio));
                 builds.Add(build);
@@ -622,7 +647,7 @@ namespace VMS.TPS
             }
         }
 
-        private string BuildFinalSummaryMessage(string marginModeMsg, double effectiveHotMarginMm, double tiltDeg,
+        private string BuildFinalSummaryMessage(string marginModeMsg, double effectiveHotMarginMm, double tiltDeg, double tiltSagittalDeg,
             int hotCount, int coldCount, int occupiedPlanes, double finalRatioPercent, bool actuallyIndividual,
             bool wasTrimmed, int maxAllowedHot, string fallbackNote)
         {
@@ -630,6 +655,7 @@ namespace VMS.TPS
                          $"- Modo de margen (hot): {marginModeMsg}\n" +
                          $"- Margen hot aplicado (borde a centro): {effectiveHotMarginMm:F1} mm\n" +
                          $"- Inclinación de malla vs. axial: {tiltDeg:F1}°\n" +
+                         $"- Inclinación de malla vs. sagital: {tiltSagittalDeg:F1}°\n" +
                          $"- Esferas Hot creadas: {hotCount}\n" +
                          $"- Esferas Cold creadas: {coldCount}\n" +
                          $"- Cortes axiales ocupados: {occupiedPlanes}\n" +
