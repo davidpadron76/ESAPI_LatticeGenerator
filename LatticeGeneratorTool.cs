@@ -12,9 +12,9 @@ using VMS.TPS.Common.Model.API;
 using VMS.TPS.Common.Model.Types;
 using VMS.TPS.LatticeMath;
 
-[assembly: AssemblyVersion("2.0.6.0")]
-[assembly: AssemblyFileVersion("2.0.6.0")]
-[assembly: AssemblyInformationalVersion("2.0.6")]
+[assembly: AssemblyVersion("2.0.7.0")]
+[assembly: AssemblyFileVersion("2.0.7.0")]
+[assembly: AssemblyInformationalVersion("2.0.7")]
 [assembly: ESAPIScript(IsWriteable = true)]
 
 namespace VMS.TPS
@@ -385,7 +385,7 @@ namespace VMS.TPS
                     // La región hot se conserva como estructura de control persistente para QA visual.
                     hotRegion.Id = "LRT_HotRegion";
 
-                    WriteOutputs(ss, ss.Image, finalHot, finalCold, radiusMm, actuallyIndividual);
+                    WriteOutputs(ss, ss.Image, gtv, finalHot, finalCold, radiusMm, actuallyIndividual);
 
                     double effectiveHotMarginMm = hotBorderClearanceMm + radiusMm;
                     string marginModeMsg = manualBoost
@@ -601,7 +601,7 @@ namespace VMS.TPS
             return true;
         }
 
-        private void WriteOutputs(StructureSet ss, VMS.TPS.Common.Model.API.Image image, List<GridCandidate> finalHot, List<GridCandidate> finalCold, double radiusMm, bool actuallyIndividual)
+        private void WriteOutputs(StructureSet ss, VMS.TPS.Common.Model.API.Image image, Structure gtv, List<GridCandidate> finalHot, List<GridCandidate> finalCold, double radiusMm, bool actuallyIndividual)
         {
             if (actuallyIndividual)
             {
@@ -620,6 +620,10 @@ namespace VMS.TPS
                     Structure s = ss.AddStructure("CONTROL", $"zC_{counter:00}");
                     s.Color = ColdStructureColor;
                     DrawSphere(s, ToVVector(c.Position), radiusMm, image);
+                    // Las esferas cold pueden aceptarse con hasta ~50% de su volumen
+                    // fuera del GTV (ver ApplyHaltonFiltering); se recortan aquí para
+                    // que la geometría dibujada nunca sobresalga del contorno del GTV.
+                    s.SegmentVolume = s.SegmentVolume.And(gtv.SegmentVolume);
                     counter++;
                 }
             }
@@ -643,6 +647,8 @@ namespace VMS.TPS
                     {
                         DrawSphere(coldStruct, ToVVector(c.Position), radiusMm, image);
                     }
+                    // Recorte final contra el GTV, ver nota arriba (modo individual).
+                    coldStruct.SegmentVolume = coldStruct.SegmentVolume.And(gtv.SegmentVolume);
                 }
             }
         }
