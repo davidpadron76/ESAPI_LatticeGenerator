@@ -12,9 +12,9 @@ using VMS.TPS.Common.Model.API;
 using VMS.TPS.Common.Model.Types;
 using VMS.TPS.LatticeMath;
 
-[assembly: AssemblyVersion("2.0.2.0")]
-[assembly: AssemblyFileVersion("2.0.2.0")]
-[assembly: AssemblyInformationalVersion("2.0.2")]
+[assembly: AssemblyVersion("2.0.3.0")]
+[assembly: AssemblyFileVersion("2.0.3.0")]
+[assembly: AssemblyInformationalVersion("2.0.3")]
 [assembly: ESAPIScript(IsWriteable = true)]
 
 namespace VMS.TPS
@@ -38,9 +38,22 @@ namespace VMS.TPS
         private static readonly Brush PanelBackgroundBrush = new SolidColorBrush(Color.FromRgb(0xF4, 0xF8, 0xFB));
         private static readonly Brush HeaderTextBrush = new SolidColorBrush(Color.FromRgb(0x1B, 0x3A, 0x57));
         private static readonly Brush LabelTextBrush = new SolidColorBrush(Color.FromRgb(0x2E, 0x2E, 0x2E));
-        private static readonly Brush FieldBackgroundBrush = Brushes.White;
+        private static readonly Brush FieldBackgroundBrush = new SolidColorBrush(Color.FromRgb(0xE3, 0xF1, 0xFC)); // azul claro tenue
         private static readonly Brush FieldBorderBrush = new SolidColorBrush(Color.FromRgb(0x9F, 0xB8, 0xC9));
         private static readonly Brush AccentBrush = new SolidColorBrush(Color.FromRgb(0x2E, 0x86, 0xC1));
+
+        // Eclipse puede tener sus propios estilos WPF implícitos (TargetType, sin
+        // x:Key) a nivel de aplicación, que se aplican automáticamente a CUALQUIER
+        // control sin un Style explícito propio -- incluidos los que crea este
+        // script, ya que la ventana corre dentro del mismo proceso/Application de
+        // Eclipse. Un Style local vacío (sin Setters) hace que WPF ignore ese estilo
+        // heredado y use la plantilla por defecto del control, sobre la cual sí se
+        // aplican Background/Foreground/BorderBrush seteados localmente.
+        private static readonly Style PlainTextBoxStyle = new Style(typeof(TextBox));
+        private static readonly Style PlainComboBoxStyle = new Style(typeof(ComboBox));
+        private static readonly Style PlainListBoxStyle = new Style(typeof(ListBox));
+        private static readonly Style PlainCheckBoxStyle = new Style(typeof(CheckBox));
+        private static readonly Style PlainButtonStyle = new Style(typeof(Button));
 
         public Script()
         {
@@ -82,7 +95,7 @@ namespace VMS.TPS
 
             // -- Sección A: Selección de Target --
             mainPanel.Children.Add(new TextBlock { Text = "1. Target Selection (GTV >= 50cc):", FontWeight = FontWeights.Bold, Foreground = HeaderTextBrush, Margin = new Thickness(0, 0, 0, 5) });
-            ComboBox cmbGTV = new ComboBox { DisplayMemberPath = "Id", ItemsSource = validGTVs, SelectedIndex = 0, Margin = new Thickness(0, 0, 0, 15), Background = FieldBackgroundBrush, Foreground = LabelTextBrush };
+            ComboBox cmbGTV = new ComboBox { Style = PlainComboBoxStyle, DisplayMemberPath = "Id", ItemsSource = validGTVs, SelectedIndex = 0, Margin = new Thickness(0, 0, 0, 15), Background = FieldBackgroundBrush, Foreground = LabelTextBrush };
             mainPanel.Children.Add(cmbGTV);
 
             // -- Sección B: Parámetros --
@@ -91,16 +104,17 @@ namespace VMS.TPS
             var pnlParams = new System.Windows.Controls.Primitives.UniformGrid { Columns = 2 };
 
             pnlParams.Children.Add(new TextBlock { Text = "Vertex Diameter (cm):", Foreground = LabelTextBrush, VerticalAlignment = VerticalAlignment.Center });
-            TextBox txtDiameter = new TextBox { Text = "1.0", Margin = new Thickness(5), Background = FieldBackgroundBrush, Foreground = LabelTextBrush, BorderBrush = FieldBorderBrush };
+            TextBox txtDiameter = new TextBox { Style = PlainTextBoxStyle, Text = "1.0", Margin = new Thickness(5), Background = FieldBackgroundBrush, Foreground = LabelTextBrush, BorderBrush = FieldBorderBrush };
             pnlParams.Children.Add(txtDiameter);
 
             pnlParams.Children.Add(new TextBlock { Text = "Vertices Separation (cm):", Foreground = LabelTextBrush, VerticalAlignment = VerticalAlignment.Center });
-            TextBox txtSeparation = new TextBox { Text = "3.0", Margin = new Thickness(5), Background = FieldBackgroundBrush, Foreground = LabelTextBrush, BorderBrush = FieldBorderBrush };
+            TextBox txtSeparation = new TextBox { Style = PlainTextBoxStyle, Text = "3.0", Margin = new Thickness(5), Background = FieldBackgroundBrush, Foreground = LabelTextBrush, BorderBrush = FieldBorderBrush };
             pnlParams.Children.Add(txtSeparation);
 
             pnlParams.Children.Add(new TextBlock { Text = "Grid Tilt vs. Axial (°):", Foreground = LabelTextBrush, VerticalAlignment = VerticalAlignment.Center });
             TextBox txtTiltDeg = new TextBox
             {
+                Style = PlainTextBoxStyle,
                 Text = "15.0",
                 Margin = new Thickness(5),
                 Background = FieldBackgroundBrush,
@@ -111,24 +125,25 @@ namespace VMS.TPS
             pnlParams.Children.Add(txtTiltDeg);
 
             pnlParams.Children.Add(new TextBlock { Text = "Peak Dose (Gy):", Foreground = LabelTextBrush, VerticalAlignment = VerticalAlignment.Center });
-            TextBox txtPeakDose = new TextBox { Text = "20.0", Margin = new Thickness(5), Background = FieldBackgroundBrush, Foreground = LabelTextBrush, BorderBrush = FieldBorderBrush };
+            TextBox txtPeakDose = new TextBox { Style = PlainTextBoxStyle, Text = "20.0", Margin = new Thickness(5), Background = FieldBackgroundBrush, Foreground = LabelTextBrush, BorderBrush = FieldBorderBrush };
             pnlParams.Children.Add(txtPeakDose);
 
             pnlParams.Children.Add(new TextBlock { Text = "Peripheral Dose Limit (Gy):", Foreground = LabelTextBrush, VerticalAlignment = VerticalAlignment.Center });
-            TextBox txtPeriDose = new TextBox { Text = "3.0", Margin = new Thickness(5), Background = FieldBackgroundBrush, Foreground = LabelTextBrush, BorderBrush = FieldBorderBrush };
+            TextBox txtPeriDose = new TextBox { Style = PlainTextBoxStyle, Text = "3.0", Margin = new Thickness(5), Background = FieldBackgroundBrush, Foreground = LabelTextBrush, BorderBrush = FieldBorderBrush };
             pnlParams.Children.Add(txtPeriDose);
 
             pnlParams.Children.Add(new TextBlock { Text = "Gradient Fall-off (%/mm):", Foreground = LabelTextBrush, VerticalAlignment = VerticalAlignment.Center });
-            TextBox txtGradient = new TextBox { Text = "10.0", Margin = new Thickness(5), Background = FieldBackgroundBrush, Foreground = LabelTextBrush, BorderBrush = FieldBorderBrush };
+            TextBox txtGradient = new TextBox { Style = PlainTextBoxStyle, Text = "10.0", Margin = new Thickness(5), Background = FieldBackgroundBrush, Foreground = LabelTextBrush, BorderBrush = FieldBorderBrush };
             pnlParams.Children.Add(txtGradient);
 
             pnlParams.Children.Add(new TextBlock { Text = "Boost: Distancia al borde GTV (cm):", Foreground = LabelTextBrush, VerticalAlignment = VerticalAlignment.Center });
-            TextBox txtManualDist = new TextBox { Text = "0.2", Margin = new Thickness(5), IsEnabled = false, Background = FieldBackgroundBrush, Foreground = LabelTextBrush, BorderBrush = FieldBorderBrush };
+            TextBox txtManualDist = new TextBox { Style = PlainTextBoxStyle, Text = "0.2", Margin = new Thickness(5), IsEnabled = false, Background = FieldBackgroundBrush, Foreground = LabelTextBrush, BorderBrush = FieldBorderBrush };
             pnlParams.Children.Add(txtManualDist);
 
             pnlParams.Children.Add(new TextBlock { Text = "Cold Envelope Expansion (cm):", Foreground = LabelTextBrush, VerticalAlignment = VerticalAlignment.Center });
             TextBox txtColdEnvelope = new TextBox
             {
+                Style = PlainTextBoxStyle,
                 Text = "0.5",
                 Margin = new Thickness(5),
                 Background = FieldBackgroundBrush,
@@ -146,6 +161,7 @@ namespace VMS.TPS
             // método dosimétrico automático no deja espacio útil para generar vértices.
             CheckBox cbManualBoost = new CheckBox
             {
+                Style = PlainCheckBoxStyle,
                 Content = "Modo Boost Manual (SRS/SBRT): usar distancia fija al borde en vez de gradiente de dosis",
                 Margin = new Thickness(0, 5, 0, 10),
                 Foreground = LabelTextBrush,
@@ -171,6 +187,7 @@ namespace VMS.TPS
             mainPanel.Children.Add(new TextBlock { Text = "3. Avoidance Structures (OARs):", FontWeight = FontWeights.Bold, Foreground = HeaderTextBrush, Margin = new Thickness(0, 15, 0, 5) });
             ListBox lstOARs = new ListBox
             {
+                Style = PlainListBoxStyle,
                 SelectionMode = SelectionMode.Multiple,
                 DisplayMemberPath = "Id",
                 ItemsSource = allStructures,
@@ -184,13 +201,14 @@ namespace VMS.TPS
 
             StackPanel pnlOARMargin = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 0, 0, 10) };
             pnlOARMargin.Children.Add(new TextBlock { Text = "OAR Safety Margin (cm) — Hot region only: ", Foreground = LabelTextBrush, VerticalAlignment = VerticalAlignment.Center });
-            TextBox txtOARMargin = new TextBox { Text = "0.5", Width = 50, Background = FieldBackgroundBrush, Foreground = LabelTextBrush, BorderBrush = FieldBorderBrush };
+            TextBox txtOARMargin = new TextBox { Style = PlainTextBoxStyle, Text = "0.5", Width = 50, Background = FieldBackgroundBrush, Foreground = LabelTextBrush, BorderBrush = FieldBorderBrush };
             pnlOARMargin.Children.Add(txtOARMargin);
             mainPanel.Children.Add(pnlOARMargin);
 
             // -- NUEVA SECCIÓN: Opción de Estructuras Individuales --
             CheckBox cbIndividual = new CheckBox
             {
+                Style = PlainCheckBoxStyle,
                 Content = "Generate individual structures (allows manual moving)",
                 Margin = new Thickness(0, 5, 0, 15),
                 Foreground = LabelTextBrush,
@@ -201,6 +219,7 @@ namespace VMS.TPS
             // -- Sección D: Botón Ejecutar --
             Button btnGenerate = new Button
             {
+                Style = PlainButtonStyle,
                 Content = "Generate LATTICE Geometry",
                 Height = 40,
                 FontWeight = FontWeights.Bold,
