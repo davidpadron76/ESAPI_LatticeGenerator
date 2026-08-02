@@ -200,19 +200,27 @@ namespace VMS.TPS.LatticeMath
 
     public static class GridBuilder
     {
+        // Compone dos rotaciones rígidas: primero alrededor del eje Z (mezcla
+        // X/Y, reparte la malla entre planos sagitales), luego alrededor del eje
+        // X (mezcla Y/Z, reparte la malla entre cortes axiales). La composición
+        // de dos rotaciones ortogonales sigue siendo una transformación rígida
+        // (conserva distancias), sin importar el orden en que se apliquen.
         public static GridBuildResult BuildCandidateGrid(
             Vec3 com,
             double separationMm,
             int n,
-            double tiltRad,
+            double tiltAxialRad,
+            double tiltSagittalRad,
             PhaseOffset phase,
             Func<Vec3, bool> isInsideHotRegion,
             Func<Vec3, bool> isInsideColdEnvelope,
             Func<Vec3, bool> bboxPreFilter = null)
         {
             var result = new GridBuildResult();
-            double cosT = Math.Cos(tiltRad);
-            double sinT = Math.Sin(tiltRad);
+            double cosAxial = Math.Cos(tiltAxialRad);
+            double sinAxial = Math.Sin(tiltAxialRad);
+            double cosSagittal = Math.Cos(tiltSagittalRad);
+            double sinSagittal = Math.Sin(tiltSagittalRad);
 
             for (int i = -n; i <= n; i++)
             {
@@ -224,10 +232,15 @@ namespace VMS.TPS.LatticeMath
                     {
                         double zLocal = k * separationMm + phase.Dz;
 
-                        double yRot = yLocal * cosT - zLocal * sinT;
-                        double zRot = yLocal * sinT + zLocal * cosT;
+                        // Paso 1: rotación alrededor de Z (mezcla X e Y).
+                        double xRotZ = xLocal * cosSagittal - yLocal * sinSagittal;
+                        double yRotZ = xLocal * sinSagittal + yLocal * cosSagittal;
 
-                        Vec3 pt = new Vec3(com.X + xLocal, com.Y + yRot, com.Z + zRot);
+                        // Paso 2: rotación alrededor de X (mezcla Y y Z), sobre el resultado del paso 1.
+                        double yRot = yRotZ * cosAxial - zLocal * sinAxial;
+                        double zRot = yRotZ * sinAxial + zLocal * cosAxial;
+
+                        Vec3 pt = new Vec3(com.X + xRotZ, com.Y + yRot, com.Z + zRot);
 
                         if (bboxPreFilter != null && !bboxPreFilter(pt))
                         {

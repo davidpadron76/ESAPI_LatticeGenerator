@@ -14,7 +14,7 @@ By leveraging ESAPI Boolean operations, this script eliminates manual contouring
 * **Eclipse 99-Structure Limit Handling:** Detects when individual per-sphere output would exceed Eclipse's structure-set limit and automatically falls back to combined `LRT_Hot`/`LRT_Cold` structures, noting this in the summary.
 * **Individual or Grouped Output:** Generate combined `LRT_Hot` / `LRT_Cold` structures, or check "Generate individual structures" to create separate `zH_01`, `zC_01`, ... structures per sphere for manual repositioning.
 * **Manual Boost Mode (SRS/SBRT):** Optionally bypass the dose-gradient margin calculation for hot spheres and set a fixed distance from the GTV border instead — useful for small lesions where the automatic dosimetric method leaves no room for vertices.
-* **Tilted Vertex Grid:** Adjustable grid tilt (°) relative to the axial plane keeps vertices from clustering on a single CT slice in thin or flattened lesions; the angle can be tuned per case (try 10–30°).
+* **Tilted Vertex Grid (2 axes):** Two independent grid tilt angles — vs. axial (keeps vertices from clustering on a single CT slice for thin/flattened lesions) and vs. sagittal (keeps vertices from clustering on a single side-view plane for lesions narrow in the Left-Right direction). Both are rigid rotations (they don't change sphere-to-sphere spacing) and can be tuned independently per case (try 10–30°).
 * **Volume Ratio Control:** Calculates and limits the total hot-spot volume to a maximum of 10% of the target volume, trimming excess spheres automatically as a clinical safety backstop.
 
 ## 💻 System Requirements
@@ -36,7 +36,7 @@ Because this project relies on external libraries and custom UI frameworks, **it
 1. Open a Patient and a Structure Set in Eclipse.
 2. Ensure you have a target structure contoured (e.g., `GTV`).
 3. Run the compiled LATTICE Generator `.dll`.
-4. In the UI window, select your Target Structure, OARs to avoid, and define your geometric parameters (Diameter, Separation, Grid Tilt, Cold Envelope Expansion).
+4. In the UI window, select your Target Structure, OARs to avoid, and define your geometric parameters (Diameter, Separation, Grid Tilt vs. Axial, Grid Tilt vs. Sagittal, Cold Envelope Expansion).
 5. Choose your dose-margin mode for hot spheres: use the dose-falloff fields (Peak Dose, Peripheral Dose, Gradient) for standard LATTICE, or check **Manual Boost Mode (SRS/SBRT)** to set a fixed distance from the GTV border instead.
 6. Check **Generate individual structures** if you need each sphere as its own structure (`zH_01`, `zC_01`, ...) for manual adjustment; leave it unchecked to get combined `LRT_Hot` / `LRT_Cold` structures.
 7. Click **Generate**. The script computes the best grid phase/parity automatically and shows a **confirmation dialog** with hot/cold counts, occupied planes, omissions, and the dose-volume ratio.

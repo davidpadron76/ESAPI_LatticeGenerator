@@ -6,6 +6,45 @@ Versions correspond to the `AssemblyVersion`/`AssemblyFileVersion` embedded in
 dialog after running the script — use it to confirm which build was used for
 a given approval/QA record.
 
+## [2.0.6.0] - 2026-08-02
+### Added
+- **Second grid tilt axis ("Grid Tilt vs. Sagittal")**: the existing axial
+  tilt only rotates around the Left-Right axis (spreading vertices across
+  axial slices); targets narrow in the Left-Right direction still collapsed
+  onto a single sagittal plane. Adds an independent second rotation around
+  the Superior-Inferior axis, composed with the first, so both axial and
+  sagittal views get proper vertex spread. Both rotations are rigid
+  (sphere-to-sphere spacing is unchanged); verified with an automated test
+  confirming a narrow-in-X object gets more distinct X positions with the
+  new tilt than without it.
+
+## [2.0.5.0] - 2026-08-02
+### Fixed
+- Unselected rows in the OAR list, and combo-box dropdown items, still
+  rendered with Eclipse's inherited dark style even after the container
+  control's own style was reset — `ListBoxItem`/`ComboBoxItem` are generated
+  per-row by WPF itself. Registers empty implicit styles for both, scoped to
+  the generator window.
+
+## [2.0.4.0] - 2026-08-02
+### Fixed
+- The OAR list's scrollbar still rendered with Eclipse's inherited dark
+  style even after PR #4's field colors — it's generated internally by
+  `ListBox`'s own template, not a control this script constructs directly.
+  Registers an empty implicit `Style` for `ScrollBar` scoped to the
+  generator window, which takes precedence over Eclipse's Application-level
+  implicit style.
+
+## [2.0.3.0] - 2026-08-02
+### Fixed
+- Setting `Background`/`Foreground` locally on each field wasn't enough to
+  escape Eclipse's own inherited WPF theme (the generator window runs
+  inside Eclipse's process/Application, which likely registers implicit
+  styles for common control types). Sets an explicit, empty local `Style`
+  on every field/checkbox/list/combo/button so each falls back to its
+  normal default template, on top of which the local colors render
+  correctly. Field backgrounds switched to a light blue tint.
+
 ## [2.0.2.0] - 2026-08-01
 ### Fixed
 - The "Generate" button parsed all numeric fields (`double.Parse`) before
